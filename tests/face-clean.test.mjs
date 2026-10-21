@@ -1,0 +1,5 @@
+import {test} from "node:test";import {strict as assert} from "node:assert";import {readFileSync} from "node:fs";
+const renderer=readFileSync("components/SuuFaceV4Lab.tsx","utf8"),shader=readFileSync("lib/face-point-shader.ts","utf8"),surface=readFileSync("lib/face-v4-geometry.ts","utf8");
+test("100k points with clean circular shader and no additive blending",()=>{assert.ok(surface.includes("MAX_FACE_POINTS=100000"));assert.ok(shader.includes("smoothstep(0.34,0.48,radius)"));assert.ok(shader.includes("THREE.NormalBlending"));assert.ok(!shader.includes("THREE.AdditiveBlending"))});
+test("front/back depth occlusion and three visualization modes",()=>{assert.ok(renderer.includes("colorWrite={false}"));assert.ok(renderer.includes('mode==="superficie"'));assert.ok(renderer.includes('mode!=="puntos"'));assert.ok(renderer.includes("Puntos + contornos"))});
+test("density weighting and controllable point size",()=>{assert.ok(surface.includes('setWeightAttribute("density")'));assert.ok(renderer.includes('id="suu-dot-size"'));assert.ok(renderer.includes('id="suu-dot-brightness"'))});
