@@ -1,0 +1,1 @@
+import "./globals.css";import type {Metadata} from "next";export const metadata:Metadata={title:"SUU 3D | Innova Space Education",description:"Interfaz holográfica conversacional y científica 3D de Innova Space Education."};export default function Layout({children}:{children:React.ReactNode}){return <html lang="es"><body>{children}</body></html>}

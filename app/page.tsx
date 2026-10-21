@@ -1,0 +1,1 @@
+import SuuConsole from "@/components/SuuConsole";export default function Home(){return <SuuConsole/>}
