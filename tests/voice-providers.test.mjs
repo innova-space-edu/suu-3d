@@ -1,0 +1,4 @@
+import {test} from "node:test";import {strict as assert} from "node:assert";import {readFileSync} from "node:fs";
+test("EDUAI six Audio Lab voices and extended narrator voices",()=>{const code=readFileSync("lib/voice-catalog.ts","utf8");for(const name of ["Catalina","Lorenzo","Alvaro","Elvira","Jorge","Dalia","Alonso","Paloma"])assert.ok(code.includes(name+"Neural"),name)});
+test("voice cloning maintains original EDUAI protection",()=>{const code=readFileSync("docs/VOICE_PROVIDERS.md","utf8");assert.ok(code.includes("AAL2"));assert.ok(code.includes("No se copian"))});
+test("provider priority Groq first",()=>{const code=readFileSync("lib/provider-router.ts","utf8");assert.ok(code.indexOf('id:"groq"')<code.indexOf('id:"sambanova"'));assert.ok(code.indexOf('id:"sambanova"')<code.indexOf('id:"openrouter"'));assert.ok(code.indexOf('id:"openrouter"')<code.indexOf('id:"gemini"'))});

@@ -31,3 +31,9 @@ La cabeza procedural no requiere API ni GPU de servidor. Para usar un modelo de 
 La conversación en LiveKit necesita un worker agente externo; la presencia de las tres variables de LiveKit no crea por sí sola un agente. Los puentes EDUAI / ScientificBrain / Visual / Sello requieren endpoints compatibles reales y credenciales de servidor. El modo gráfico y la voz del navegador funcionan aunque estos servicios no estén activados.
 
 Más información: `docs/INTEGRATIONS.md`.
+
+## Biblioteca de voces y respaldo IA
+
+SUU incorpora las voces estándar de EDUAI con Edge TTS, selección por usuario, voces locales del navegador y respaldo ElevenLabs. El motor de lenguaje usa Groq primero y permite SambaNova, OpenRouter y Gemini como proveedores alternativos, sin requerir OpenAI. Las voces privadas clonadas de EDUAI conservan los permisos originales y aún necesitan delegación por usuario.
+
+Consulta [Voces y proveedores](docs/VOICE_PROVIDERS.md) y [.env.example](.env.example).
