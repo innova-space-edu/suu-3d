@@ -3,6 +3,7 @@ import * as THREE from "three";
 /** Point sprite renderer: round, crisp dots, depth-aware and NO additive blending / bloom. */
 const vertex=`
 attribute float aImportance;
+attribute vec3 color;
 uniform float uPixelSize;
 uniform float uDpr;
 uniform float uBrightness;
