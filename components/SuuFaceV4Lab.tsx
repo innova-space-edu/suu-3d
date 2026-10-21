@@ -42,9 +42,9 @@ function create(){
  for(let i=0;i<p.count;i++){const v=sculpt(p.getX(i),p.getY(i),p.getZ(i));p.setXYZ(i,...v);colors.set(colorAt(...v),i*3)}
  face.setAttribute("color",new THREE.BufferAttribute(colors,3));face.computeVertexNormals();
  const cloud=new THREE.BufferGeometry(),pos=new Float32Array(TOTAL*3),col=new Float32Array(TOTAL*3);
- let seed=19712;const random=()=>{seed=(Math.imul(1664525,seed)+1013904223)>>>0;return seed/4294967296};
+ 
  const mat=new THREE.MeshBasicMaterial(),mesh=new THREE.Mesh(face,mat);
- const sampler=new MeshSurfaceSampler(mesh).setRandomGenerator(random).build(),sample=new THREE.Vector3();
+ const sampler=new MeshSurfaceSampler(mesh).build(),sample=new THREE.Vector3();
  for(let i=0;i<TOTAL;i++){sampler.sample(sample);pos.set(sample.toArray(),i*3);col.set(colorAt(sample.x,sample.y,sample.z),i*3)}
  mat.dispose();cloud.setAttribute("position",new THREE.BufferAttribute(pos,3));cloud.setAttribute("color",new THREE.BufferAttribute(col,3));
  return {face,cloud};
