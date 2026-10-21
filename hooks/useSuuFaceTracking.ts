@@ -34,7 +34,9 @@ export function useSuuFaceTracking(){
    ]);localStream=captured;
    if(generation.current!==ticket){captured.getTracks().forEach(t=>t.stop());return}
    const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1/wasm");
-   localModel=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"},runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:true});
+   const modelUrl="https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+   try{localModel=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:modelUrl,delegate:"GPU"},runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:true})}
+   catch{localModel=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:modelUrl,delegate:"CPU"},runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:true})}
    if(generation.current!==ticket){localModel.close();captured.getTracks().forEach(t=>t.stop());return}
    const element=document.createElement("video"); // not appended, never displayed
    element.autoplay=true;element.playsInline=true;element.muted=true;element.srcObject=captured;

@@ -57,13 +57,13 @@ function Line({points,r=.013,color=cyan,opacity=.8}:{points:[number,number,numbe
  return <mesh geometry={geometry}><meshBasicMaterial color={color} transparent opacity={opacity}/></mesh>;
 }
 function Eyeball({x,blink,look}:{x:number;blink:number;look:{x:number;y:number}}){
- const pivot=useRef<THREE.Group>(null);
- useFrame(()=>{if(pivot.current){pivot.current.rotation.y=THREE.MathUtils.lerp(pivot.current.rotation.y,look.x*.22,.19);pivot.current.rotation.x=THREE.MathUtils.lerp(pivot.current.rotation.x,-look.y*.13,.19)}});
+ const pivot=useRef<THREE.Group>(null),lids=useRef<THREE.Group>(null);
+ useFrame(({clock})=>{if(pivot.current){pivot.current.rotation.y=THREE.MathUtils.lerp(pivot.current.rotation.y,look.x*.22,.19);pivot.current.rotation.x=THREE.MathUtils.lerp(pivot.current.rotation.x,-look.y*.13,.19)}if(lids.current){const natural=Math.pow(Math.max(0,Math.sin(clock.elapsedTime*.65+.7)),56);lids.current.scale.y=THREE.MathUtils.lerp(lids.current.scale.y,Math.max(.055,1-Math.max(blink,natural)*.97),.27)}});
  const z=.795;
  return <group position={[x,.165,z]}>
   <mesh scale={[.175,.112,.069]}><sphereGeometry args={[1,40,30]}/><meshPhysicalMaterial color="#92e2ee" roughness={.23} metalness={.16} transparent opacity={.95}/></mesh>
   <group ref={pivot}><mesh position={[0,-.005,.07]} scale={[.081,.082,.025]}><sphereGeometry args={[1,32,24]}/><meshBasicMaterial color="#2d7192"/></mesh><mesh position={[0,-.005,.091]} scale={[.043,.057,.018]}><sphereGeometry args={[1,24,20]}/><meshBasicMaterial color="#031324"/></mesh><mesh position={[-.022,.024,.108]} scale={[.012,.012,.005]}><sphereGeometry args={[1,12,8]}/><meshBasicMaterial color="#f2ffff"/></mesh></group>
-  <group scale={[1,Math.max(.06,1-blink*.97),1]}>
+  <group ref={lids}>
    <Line points={[[-.19,.01,.015],[-.125,.11,.062],[0,.125,.072],[.12,.09,.055],[.19,.006,.02]]} r={.023}/>
    <Line points={[[-.19,.01,.015],[-.09,-.105,.05],[.055,-.115,.06],[.19,.006,.02]]} r={.019} opacity={.88}/>
   </group>

@@ -59,7 +59,7 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
    if(!response.ok)throw new Error(data.error||"Error de conversación");
    if(stopSignal.current)return;
    const reply=String(data.reply||"").trim();if(!reply)throw new Error("SUU no generó una respuesta");
-   history.current=[...messages,{role:"assistant",content:reply}].slice(-16);
+   history.current=[...messages,{role:"assistant" as const,content:reply}].slice(-16);
    setProvider(String(data.provider||""));onTurnRef.current(text,reply,String(data.provider||""));
    await speak(reply);
   }catch(e){if(stopSignal.current)return;setPhaseNow("error");setSubtitle(e instanceof Error?e.message:"No se pudo completar la respuesta. Pulsa el micrófono para reintentar.")}
