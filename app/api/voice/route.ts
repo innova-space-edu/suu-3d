@@ -1,1 +1,47 @@
-import {NextRequest,NextResponse} from "next/server";import {authorized,originAllowed,throttle,clientIdentity} from "@/lib/security";export const runtime="nodejs";export async function POST(req:NextRequest){if(!originAllowed(req))return NextResponse.json({error:"Origen rechazado"},{status:403});if(!await authorized())return NextResponse.json({error:"Acceso requerido"},{status:401});if(!throttle("voice:"+clientIdentity(req),18))return NextResponse.json({error:"Límite de voz"},{status:429});const key=process.env.ELEVENLABS_API_KEY,voice=process.env.ELEVENLABS_VOICE_ID;if(!key||!voice)return NextResponse.json({error:"Voz premium no configurada"},{status:409});try{const {text}=await req.json();if(typeof text!=="string"||text.length<1||text.length>2000)return NextResponse.json({error:"Texto inválido"},{status:400});const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),26000);try{const res=await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+encodeURIComponent(voice),{method:"POST",signal:ctl.signal,headers:{"xi-api-key":key,"Content-Type":"application/json","Accept":"audio/mpeg"},body:JSON.stringify({text,model_id:"eleven_multilingual_v2"})});if(!res.ok)throw new Error("ElevenLabs "+res.status);const audio=await res.arrayBuffer();if(audio.byteLength>8000000)throw new Error("Audio demasiado grande");return new NextResponse(audio,{headers:{"Content-Type":"audio/mpeg","Cache-Control":"no-store"}})}finally{clearTimeout(timer)}}catch(e){return NextResponse.json({error:e instanceof Error?e.message:"No se pudo generar audio"},{status:502})}}
+import {NextRequest,NextResponse} from "next/server";
+import {EdgeTTS,Constants} from "@andresaya/edge-tts";
+import {authorized,originAllowed,throttle,clientIdentity} from "@/lib/security";
+import {DEFAULT_VOICE_ID,knownVoice,voiceCatalog} from "@/lib/voice-catalog";
+export const runtime="nodejs";export const maxDuration=60;
+export async function GET(){
+ if(!await authorized())return NextResponse.json({error:"Acceso requerido"},{status:401});
+ return NextResponse.json({voices:voiceCatalog(),defaultVoice:DEFAULT_VOICE_ID,privateEduaiVoices:"Requieren sesión EDUAI, MFA y autorización individual"},{headers:{"Cache-Control":"private, no-store"}});
+}
+async function synthesizeEdge(text:string,id:string){
+ const tts=new EdgeTTS();
+ await tts.synthesize(text,id,{outputFormat:Constants.OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3,rate:"-2%",pitch:"+0Hz",volume:"100%"});
+ const audio=tts.toBuffer();
+ if(audio.length<200||audio.length>8000000)throw new Error("Respuesta de audio inválida");
+ return new Uint8Array(audio);
+}
+async function synthesizePremium(text:string){
+ const key=process.env.ELEVENLABS_API_KEY,voice=process.env.ELEVENLABS_VOICE_ID;
+ if(!key||!voice)throw new Error("ElevenLabs no está configurado");
+ const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),19000);
+ try{
+  const res=await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+encodeURIComponent(voice),{method:"POST",signal:ctl.signal,cache:"no-store",headers:{"xi-api-key":key,"Content-Type":"application/json","Accept":"audio/mpeg"},body:JSON.stringify({text,model_id:"eleven_multilingual_v2"})});
+  if(!res.ok)throw new Error("ElevenLabs HTTP "+res.status);
+  const bytes=new Uint8Array(await res.arrayBuffer());
+  if(bytes.length<200||bytes.length>8000000)throw new Error("Audio inválido");
+  return bytes;
+ }finally{clearTimeout(timer)}
+}
+export async function POST(req:NextRequest){
+ if(!originAllowed(req))return NextResponse.json({error:"Origen rechazado"},{status:403});
+ if(!await authorized())return NextResponse.json({error:"Acceso requerido"},{status:401});
+ if(!throttle("voice:"+clientIdentity(req),20))return NextResponse.json({error:"Demasiadas solicitudes"},{status:429});
+ if(Number(req.headers.get("content-length")||0)>5000)return NextResponse.json({error:"Texto demasiado largo"},{status:413});
+ let text="",voiceId=DEFAULT_VOICE_ID;
+ try{const b=await req.json();text=typeof b.text==="string"?b.text.trim():"";voiceId=typeof b.voiceId==="string"?b.voiceId:DEFAULT_VOICE_ID}catch{}
+ if(!text||text.length>2000)return NextResponse.json({error:"Texto inválido"},{status:400});
+ if(!knownVoice(voiceId)&&voiceId!=="elevenlabs:default")return NextResponse.json({error:"Voz no permitida"},{status:400});
+ const pipeline=voiceId==="elevenlabs:default"?["premium","edge"] as const:["edge","premium"] as const;
+ for(const provider of pipeline){
+  try{
+   if(provider==="premium"&&!(process.env.ELEVENLABS_API_KEY&&process.env.ELEVENLABS_VOICE_ID))continue;
+   const audio=provider==="edge"?await synthesizeEdge(text,knownVoice(voiceId)?voiceId:DEFAULT_VOICE_ID):await synthesizePremium(text);
+   return new NextResponse(Buffer.from(audio),{headers:{"Content-Type":"audio/mpeg","Cache-Control":"private, no-store","X-Suu-Voice-Provider":provider,"X-Suu-Voice-Id":provider==="edge"?(knownVoice(voiceId)?voiceId:DEFAULT_VOICE_ID):"elevenlabs:default"}});
+  }catch(e){console.warn("[SUU voice fallback]",provider,e instanceof Error?e.name:"error")}
+ }
+ return NextResponse.json({error:"No hay motor de voz en línea. Usa las voces del navegador."},{status:503});
+}
