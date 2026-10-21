@@ -1,0 +1,1 @@
+import SuuFaceV4Lab from "@/components/SuuFaceV4Lab";export default function Page(){return <SuuFaceV4Lab/>}
