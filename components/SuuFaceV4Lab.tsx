@@ -6,19 +6,43 @@ import * as THREE from "three";
 import {createFaceGeometry,type FaceView,type PointCount,type CleanMode} from "@/lib/face-v4-geometry";
 import {makeCleanPointMaterial} from "@/lib/face-point-shader";
 
-type Controls={view:FaceView;count:PointCount;mode:CleanMode;size:number;brightness:number;contrast:number};
+type Controls={view:FaceView;count:PointCount;mode:CleanMode;size:number;brightness:number;contrast:number;onProgress:(count:number)=>void;onError:(message:string)=>void};
 const modes:{id:CleanMode;name:string;description:string}[]=[
  {id:"puntos",name:"Solo puntos",description:"Partículas visibles sin superficie ni contornos adicionales"},
  {id:"contornos",name:"Puntos + contornos",description:"Realce de ojos, nariz, labios, mandíbula y orejas"},
  {id:"superficie",name:"Superficie tenue",description:"Puntos, contornos y una capa facial muy transparente"}
 ];
-function Head({view,count,mode,size,brightness,contrast}:Controls){
+function Head({view,count,mode,size,brightness,contrast,onProgress,onError}:Controls){
  const group=useRef<THREE.Group>(null);
  const geometry=useMemo(createFaceGeometry,[]);
  const pointMaterial=useMemo(()=>makeCleanPointMaterial({size,brightness,opacity:contrast}),[]);
  const contourMaterial=useMemo(()=>makeCleanPointMaterial({size:size*.88,brightness:brightness*.83,opacity:contrast*.75}),[]);
  useEffect(()=>()=>{geometry.dispose();pointMaterial.dispose();contourMaterial.dispose()},[geometry,pointMaterial,contourMaterial]);
- useEffect(()=>{geometry.cloud.setDrawRange(0,count)},[geometry,count]);
+
+ const [received,setReceived]=useState(0);
+ useEffect(()=>{
+  if(typeof Worker==="undefined"){onError("Este navegador no admite procesamiento en segundo plano.");return}
+  const worker=new Worker("/face-v4-worker.js");let stopped=false;
+  worker.onmessage=(event:MessageEvent)=>{
+   if(stopped)return;
+   const m=event.data;
+   if(m.type==="error"){onError(String(m.message||"Error calculando puntos"));return}
+   if(m.type!=="chunk")return;
+   const start=Number(m.offset);
+   const positions=geometry.cloud.getAttribute("position") as THREE.BufferAttribute;
+   const colors=geometry.cloud.getAttribute("color") as THREE.BufferAttribute;
+   const weight=geometry.cloud.getAttribute("aImportance") as THREE.BufferAttribute;
+   (positions.array as Float32Array).set(new Float32Array(m.position),start*3);
+   (colors.array as Float32Array).set(new Float32Array(m.color),start*3);
+   (weight.array as Float32Array).set(new Float32Array(m.importance),start);
+   positions.needsUpdate=true;colors.needsUpdate=true;weight.needsUpdate=true;
+   setReceived(start+Number(m.count));onProgress(start+Number(m.count));
+  };
+  worker.onerror=()=>{if(!stopped)onError("No se pudo ejecutar el generador. Recarga el laboratorio.")};
+  worker.postMessage({type:"generate",count:100000});
+  return ()=>{stopped=true;worker.terminate()};
+ },[geometry,onProgress,onError]);
+ useEffect(()=>{geometry.cloud.setDrawRange(0,Math.min(count,received))},[geometry,count,received]);
  useEffect(()=>{
   pointMaterial.uniforms.uPixelSize.value=size;
   pointMaterial.uniforms.uBrightness.value=brightness;
@@ -52,6 +76,7 @@ export default function SuuFaceV4Lab(){
  const [size,setSize]=useState(1.3);
  const [brightness,setBrightness]=useState(.74);
  const [contrast,setContrast]=useState(.87);
+ const [loaded,setLoaded]=useState(0),[failure,setFailure]=useState("");
  return <main className="faceLab">
   <header className="labHeader">
    <div><a href="/">← Volver a SUU</a><h1>SUU V4.1 · Point Cloud Clean</h1>
@@ -63,11 +88,13 @@ export default function SuuFaceV4Lab(){
     <color attach="background" args={["#020e20"]}/>
     <ambientLight intensity={.48}/>
     <directionalLight position={[1,3,4]} intensity={.65}/>
-    <Head view={view} count={count} mode={mode} size={size} brightness={brightness} contrast={contrast}/>
+    <Head view={view} count={count} mode={mode} size={size} brightness={brightness} contrast={contrast} onProgress={setLoaded} onError={setFailure}/>
     <Stars count={90} depth={18} factor={.85} fade/>
     <OrbitControls enablePan={false} enableDamping minDistance={2.7} maxDistance={6}/>
    </Canvas>
-   <span className="labCount">{count.toLocaleString("es-CL")} puntos · {view} · {mode.replace("-"," ")}</span>
+   <span className="labCount">{Math.min(count,loaded).toLocaleString("es-CL")} / {count.toLocaleString("es-CL")} puntos · {view} · {mode}</span>
+   {loaded<count&&!failure&&<div className="labLoading" role="status">Cargando puntos: {Math.round(100*loaded/100000)}% · la vista permanece interactiva.</div>}
+   {failure&&<div className="labLoading labError" role="alert">{failure}</div>}
   </section>
   <section className="labControls" aria-label="Controles de visualización">
    <div><strong>Vista</strong><div className="labButtons">
