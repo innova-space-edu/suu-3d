@@ -24,7 +24,7 @@ Todas las claves viven en el servidor; sesión firmada en cookie HTTP-only; vali
 
 ## Modelo 3D
 
-La cabeza procedural no requiere API ni GPU de servidor. Para usar un modelo de Blender de alta fidelidad, exportar glTF/GLB con blendshapes ARKit y configurar `NEXT_PUBLIC_SUU_HEAD_MODEL=/models/suu-head.glb`, colocando el archivo con derechos de uso en `public/models`. La estética de partículas translúcidas está inspirada en la imagen de referencia sin incluir material de terceros.
+La página principal, el modo de voz y `/face-lab` comparten el rostro anatómico SUU V5 (`public/models/suu-face-anatomical.glb`, base MakeHuman CC0). Se muestran 100.000 puntos en calidad alta y 25.000 en modo económico, con brillo uniforme y una superficie de apoyo. No requiere API ni GPU de servidor. Conserva seguimiento de orientación de cabeza y reacción luminosa al audio; todavía no incluye parpadeo, rig facial ni sincronización de labios. La procedencia y licencia están documentadas en `docs/FACE_LAB.md`.
 
 ## Límite actual
 

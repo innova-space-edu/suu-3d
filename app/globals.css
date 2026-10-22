@@ -29,3 +29,4 @@
 .faceLabLink { color:#9de9ff; border:1px solid #367589; padding:8px 12px; border-radius:8px; text-decoration:none; font-size:12px; }
 .faceLabLink:hover,.faceLabLink:focus-visible { background:#164056; outline:2px solid #7ed9f4; }
 @media(max-width:600px){.faceLabLink { padding:6px; font-size:10px; } .topActions>small { display:none; }}
+.avatarRetry{position:absolute;top:12px;right:12px;z-index:6;border:1px solid #305f7c;border-radius:8px;background:#082a40;color:#b8e6f9;padding:5px 10px;cursor:pointer}.avatarRetry:focus-visible{outline:2px solid #7ed9f4}

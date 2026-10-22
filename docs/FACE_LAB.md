@@ -1,6 +1,6 @@
-# SUU V4.2 face laboratory
+# SUU face laboratory — version history
 
-Open `/face-lab` from the "Nuevo rostro · 100k" link on the home page.
+Open `/face-lab` from the "Laboratorio facial" link on the home page.
 
 The original `suu-face-v4.glb` is now served locally at `/models/suu-face-v4.glb` (91,392 vertices, 182,016 triangles). This is the previously generated experimental mesh, not a scanned or professionally sculpted head. No external model hosting or API keys are needed.
 
@@ -8,7 +8,7 @@ The loader corrects inward-facing source triangles, smooths the diamond-shaped s
 
 The shader relies on Three.js-injected attributes (no duplicate `color` declaration). It uses actual surface normals, normal alpha blending, and no bloom. Explicit cloud bounds avoid progressive zero-buffer culling. Loading/errors overlay the viewport and a retry button recreates the viewer. Unmount aborts the download and terminates the worker.
 
-The existing conversational avatar remains available on the home page. V4.2 has no morph targets or speech rig and must not be described as a finished replacement.
+At V4.2, the previous conversational avatar remained on the home page. That experimental version had no morph targets or speech rig.
 
 Validation: `npm test`, `npm run build`, and browser checks of frontal/both profile views, point counts, solid mode and retry. Build success alone is not a WebGL rendering test.
 
@@ -30,3 +30,8 @@ Rebuild with `python scripts/build-anatomical-face.py /path/to/base.obj` (Python
 Mesh provenance and license: https://github.com/makehumancommunity/makehuman/blob/3c701a8e52f09e69922e8b598d23be2d7dfc49e3/makehuman/data/3dobjs/base.obj . The mesh header explicitly dedicates this asset to CC0. A copy of the asset license is included as `public/models/MAKEHUMAN-CC0.txt`. No MakeHuman application code is included.
 
 100,000 points use deterministic area-weighted Halton samples, with mild feature weighting. This avoids bright concentrations caused by dense eye/lip topology. Solid mode now truly hides points and uses a neutral material; the blue supporting surface is confined to contour mode. Global brightness drives all scene lights and point brightness. Rotating manually labels the view as free rather than incorrectly calling it frontal.
+
+
+## V5 — main page integration
+
+The approved V5 appearance now replaces the procedural avatar on the main page and in voice mode. All three views share `SuuAnatomicalHead`, its loader, sampling worker and materials. High quality displays 100,000 points; economy displays 25,000. The main viewer preserves head-orientation tracking and a subtle audio-driven brightness response. It does not animate lips, eyelids or facial expressions. Loading, errors and retry are visible in both conversation views. The old `NEXT_PUBLIC_SUU_HEAD_MODEL` override is no longer used by the main avatar.
