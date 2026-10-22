@@ -66,13 +66,13 @@ export function useSuuFaceTracking(){
         smile:Math.max(0,Math.min(1,(weight("mouthSmileLeft")+weight("mouthSmileRight"))/2)),
         mouth:Math.max(0,Math.min(1,weight("jawOpen")))};
      });
-    }catch{setError("Se interrumpió el análisis facial");cleanup()}
+    }catch{cleanup();setStatus("error");setError("Se interrumpió el análisis facial. Vuelve a activar la cámara.")}
    };
    frame.current=requestAnimationFrame(loop);
   }catch(e){
    localStream?.getTracks().forEach(t=>t.stop());
    localModel?.close();
-   if(generation.current===ticket){setStatus("error");setError(e instanceof Error?e.message:"No se pudo iniciar el seguimiento facial")}
+   if(generation.current===ticket){setStatus("error");setError(e instanceof Error&&e.name==="NotAllowedError"?"Permite la cámara para suu-3d.vercel.app en los permisos del navegador y vuelve a intentarlo.":e instanceof Error?e.message:"No se pudo iniciar el seguimiento facial")}
   }
  },[cleanup]);
  const active=status!=="off"&&status!=="error";

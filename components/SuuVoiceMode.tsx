@@ -36,7 +36,7 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
     player.onerror=()=>{releaseAudio();setPhaseNow("idle");restart()};
     let time=0;timer.current=setInterval(()=>{time+=.7;setEnergy(.1+.37*Math.abs(Math.sin(time)))},100);
     started=true;await player.play();
-   }catch{if(started)releaseAudio()}
+   }catch{releaseAudio();started=false}
   }
   if(started||stopSignal.current)return;
   if(!("speechSynthesis" in window)){setPhaseNow("error");setSubtitle("No se encontró ningún sintetizador de voz.");return}

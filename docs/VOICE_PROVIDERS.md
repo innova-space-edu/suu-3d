@@ -17,9 +17,9 @@ No se requiere ninguna cuenta o API key de OpenAI.
 ### Respaldos opcionales
 ```dotenv
 SAMBANOVA_API_KEY_SUU=
-SAMBANOVA_MODEL_SUU=
+SAMBANOVA_MODEL_SUU=Meta-Llama-3.3-70B-Instruct
 OPENROUTER_API_KEY_SUU=
-OPENROUTER_MODEL_SUU=
+OPENROUTER_MODEL_SUU=meta-llama/llama-3.3-70b-instruct
 GEMINI_API_KEY_SUU=
 GEMINI_MODEL_SUU=gemini-2.5-flash
 ```
@@ -58,3 +58,11 @@ ELEVENLABS_VOICE_ID=
 ## Seguridad
 
 Configura las claves en Vercel → Settings → Environment Variables, Production. No edites `.env.example` con valores privados ni subas `.env.local` a GitHub. Redeploy para que se apliquen cambios. Los servicios de TTS Edge dependen de conectividad de la plataforma y no garantizan disponibilidad continua.
+
+## Diagnóstico de servicios
+
+El panel distingue configuración de disponibilidad: una clave guardada no demuestra que tenga permisos o saldo. Los cuatro proveedores tienen un modelo predeterminado y se habilitan al configurar su clave. Un fallo informa proveedor y código HTTP sin devolver claves ni cuerpos de error externos.
+
+LiveKit es independiente de estas cuatro IA y requiere su propio agente externo. Antes de entregar un token, el servidor hace una consulta de salas de solo lectura para validar las credenciales. La URL, API key y secret deben ser del mismo proyecto. La cámara está permitida para el propio sitio y solo se activa con el botón del usuario.
+
+V5 tiene movimiento de cabeza más visible y seguimiento de orientación cuando se detecta una cara. No tiene aún rig de labios, párpados ni expresiones.

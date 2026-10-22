@@ -17,11 +17,12 @@ function Scene({speaking,listening,energy,quality,solid,tracking,cameraActive,on
  },[camera,size.width,size.height]);
  useFrame(({clock,pointer},dt)=>{
   if(!head.current)return;
-  const yaw=cameraActive&&tracking?tracking.yaw*.4:pointer.x*.12+.12;
-  const pitch=cameraActive&&tracking?-tracking.pitch*.27:-pointer.y*.05;
+  const time=clock.elapsedTime;
+  const yaw=cameraActive&&tracking?tracking.yaw*.85:pointer.x*.26+.12+Math.sin(time*.45)*.07;
+  const pitch=cameraActive&&tracking?-tracking.pitch*.55:-pointer.y*.12+Math.sin(time*.65)*.025+(speaking?Math.sin(time*2.8)*.025:0);
   head.current.rotation.y=THREE.MathUtils.damp(head.current.rotation.y,yaw,5,dt);
   head.current.rotation.x=THREE.MathUtils.damp(head.current.rotation.x,pitch,5,dt);
-  head.current.rotation.z=THREE.MathUtils.damp(head.current.rotation.z,cameraActive?(tracking?.roll||0)*-.2:0,5,dt);
+  head.current.rotation.z=THREE.MathUtils.damp(head.current.rotation.z,cameraActive?(tracking?.roll||0)*-.35:Math.sin(time*.38)*.018,5,dt);
   head.current.position.y=Math.sin(clock.elapsedTime*.8)*.008+(listening?.008:0);
  });
  const brightness=1+(speaking?Math.min(1,Math.max(0,energy))*.18:listening?.04:0);
