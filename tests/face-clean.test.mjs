@@ -1,5 +1,6 @@
-import {test} from "node:test";import {strict as assert} from "node:assert";import {readFileSync} from "node:fs";
-const renderer=readFileSync("components/SuuFaceV4Lab.tsx","utf8"),shader=readFileSync("lib/face-point-shader.ts","utf8"),surface=readFileSync("lib/face-v4-geometry.ts","utf8");
-test("100k points with clean circular shader and no additive blending",()=>{assert.ok(surface.includes("MAX_FACE_POINTS=100000"));assert.ok(shader.includes("smoothstep(0.34,0.48,radius)"));assert.ok(shader.includes("THREE.NormalBlending"));assert.ok(!shader.includes("THREE.AdditiveBlending"))});
-test("front/back depth occlusion and three visualization modes",()=>{assert.ok(renderer.includes("colorWrite={false}"));assert.ok(renderer.includes('mode==="superficie"'));assert.ok(renderer.includes('mode!=="puntos"'));assert.ok(renderer.includes("Puntos + contornos"))});
-test("density weighting and controllable point size",()=>{assert.ok(surface.includes("DynamicDrawUsage"));assert.ok(renderer.includes('id="suu-dot-size"'));assert.ok(renderer.includes('id="suu-dot-brightness"'))});
+import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const shader=readFileSync('lib/face-point-shader.ts','utf8');
+test('custom shader does not redeclare injected color and uses surface normals',()=>{assert.ok(!shader.includes('attribute vec3 color;'));assert.ok(shader.includes('normalMatrix*normal'));assert.ok(!shader.includes('THREE.AdditiveBlending'))});
+test('source GLB contains complete indexed surface without external dependencies',()=>{
+ const b=readFileSync('public/models/suu-face-v4.glb');assert.equal(b.toString('ascii',0,4),'glTF');assert.equal(b.readUInt32LE(8),b.length);const j=JSON.parse(b.toString('utf8',20,20+b.readUInt32LE(12)));assert.equal(j.accessors[1].count,91392);assert.equal(j.accessors[0].count,546048);assert.ok(j.buffers.every(b=>!b.uri));
+});

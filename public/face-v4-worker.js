@@ -1,84 +1,38 @@
 "use strict";
-/* Nonblocking face cloud. Local calculations, no external API or media access. */
-const sq=(v)=>v*v;
-const gauss=(x,y,a,b,sx,sy)=>Math.exp(-.5*(sq((x-a)/sx)+sq((y-b)/sy)));
-const clamp=(v)=>Math.max(0,Math.min(1,v));
-
-/* Continuous parametric experimental head. This is NOT a professional scanned/rigged head. */
-function sculpt(x,y,z){
- const Y=y*1.22-.05,t=clamp((-Y-.4)/.77);
- let X=x*(.95+.065*gauss(Y,0,-.21,0,.26,1)-.2*Math.pow(t,2.2)),Z=z*.89;
- const ear=gauss(Math.abs(X),Y,.88,-.1,.13,.3)*clamp((Math.abs(X)-.67)/.18);
- X+=Math.sign(X)*.13*ear;
- let d=.06*gauss(X,Y,0,.63,.62,.35);
- for(const side of [-1,1]){
-  d+=.085*gauss(X,Y,side*.38,.38,.23,.10);
-  d-=.13*gauss(X,Y,side*.38,.165,.19,.12);
-  d+=.11*gauss(X,Y,side*.52,-.20,.24,.21);
-  d+=.115*gauss(X,Y,side*.16,-.41,.085,.084);
-  d-=.045*gauss(X,Y,side*.115,-.467,.065,.041);
- }
- d+=.195*gauss(X,Y,0,.02,.115,.40)+.275*gauss(X,Y,0,-.345,.155,.125);
- d+=.064*gauss(X,Y,0,-.605,.245,.048)-.057*gauss(X,Y,0,-.653,.265,.023);
- d+=.087*gauss(X,Y,0,-.718,.247,.061)+.108*gauss(X,Y,0,-.96,.34,.2)-.043*gauss(X,Y,0,-.823,.22,.075);
- return [X,Y,Z+clamp(z*2.7)*d];
-}
-function tone(x,y,z){
- // Darker blues, restrained white; pupils are shaded instead of overexposed.
- const illum=.42+.18*Math.max(0,z);
- let c=[.045+.13*illum,.19+.42*illum,.40+.43*illum];
- if(z<.38)return c;
- for(const cx of [-.38,.38]){
-  const dx=(x-cx)/.205,h=.165+.025*(1-clamp(dx*dx)),r=Math.sqrt(Math.max(0,1-dx*dx))*.106;
-  const p=sq(x-cx)+sq(y-.163);
-  if(Math.abs(dx)<1&&Math.abs(y-h)<r)c=[.27,.63,.78];
-  if(p<sq(.063))c=[.07,.32,.64];
-  if(p<sq(.030))c=[.008,.03,.07];
-  if(sq(x-cx+.020)+sq(y-.185)<sq(.008))c=[.53,.82,.91];
-  if(Math.abs(dx)<1.02&&Math.abs(Math.abs(y-h)-r)<.008)c=[.21,.65,.84];
- }
- for(const cx of [-.12,.12])if(sq((x-cx)/.048)+sq((y+.457)/.027)<1)c=[.014,.06,.11];
- const span=Math.max(0,1-sq(x/.32)),ly=-.653+.029*span;
- if(Math.abs(x)<.33&&Math.abs(y-ly)<.010)c=[.012,.04,.085];
- else if((Math.abs(x)<.31&&Math.abs(y-(ly+.048*span))<.014)||(Math.abs(x)<.32&&Math.abs(y-(ly-.070*span))<.017))c=[.20,.48,.69];
- return c;
-}
-function importanceAt(x,y,z){
- if(z<.38)return 1;
- let w=1;
- for(const cx of [-.38,.38]){
-  w+=.9*gauss(x,y,cx,.165,.23,.145);
-  w+=.32*gauss(x,y,cx,.40,.26,.07);
- }
- w+=1.0*gauss(x,y,0,-.31,.21,.35);
- w+=1.2*gauss(x,y,0,-.68,.37,.14);
- w+=.22*gauss(x,y,0,-.96,.4,.15);
- w+=.15*gauss(Math.abs(x),y,.80,-.12,.22,.39);
- return Math.min(3.2,w);
-}
-
+// Area-weighted barycentric samples of the actual GLB, never a second procedural head.
 self.onmessage=({data})=>{
  if(data?.type!=="generate")return;
  try{
+  const p=new Float32Array(data.position),normals=new Float32Array(data.normal),indices=new Uint32Array(data.index),sourceColor=data.color?new Float32Array(data.color):null;
+  if(!p.length||p.length!==normals.length||indices.length%3)throw new Error("Malla facial inválida");
+  const triangles=indices.length/3,cdf=new Float64Array(triangles);
+  const gauss=(x,y,cx,cy,sx,sy)=>Math.exp(-.5*(((x-cx)/sx)**2+((y-cy)/sy)**2));
+  const importance=(x,y,z)=>z<.4?1:1+.8*gauss(x,y,0,-.3,.22,.35)+.9*gauss(x,y,0,-.66,.36,.14)+.7*(gauss(x,y,-.38,.16,.23,.14)+gauss(x,y,.38,.16,.23,.14));
+  let sum=0;
+  for(let t=0;t<triangles;t++){
+   const a=indices[t*3]*3,b=indices[t*3+1]*3,c=indices[t*3+2]*3;
+   const ux=p[b]-p[a],uy=p[b+1]-p[a+1],uz=p[b+2]-p[a+2],vx=p[c]-p[a],vy=p[c+1]-p[a+1],vz=p[c+2]-p[a+2];
+   const area=Math.hypot(uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx)/2;
+   sum+=area*importance((p[a]+p[b]+p[c])/3,(p[a+1]+p[b+1]+p[c+1])/3,(p[a+2]+p[b+2]+p[c+2])/3);cdf[t]=sum;
+  }
+  if(!(sum>0&&Number.isFinite(sum)))throw new Error("Superficie facial vacía");
   const total=Math.min(100000,Math.max(0,Math.trunc(data.count||0))),CHUNK=5000;
-  let seed=19871623;
+  let seed=19871623,written=0;
   const rng=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296};
-  let written=0;
   while(written<total){
-   const n=Math.min(CHUNK,total-written);
-   const pos=new Float32Array(n*3),colors=new Float32Array(n*3),imp=new Float32Array(n);
-   let k=0;
-   while(k<n){
-    const y=rng()*2-1,phi=rng()*Math.PI*2,r=Math.sqrt(Math.max(0,1-y*y));
-    const x=Math.cos(phi)*r,z=Math.sin(phi)*r;
-    const v=sculpt(x,y,z),w=importanceAt(...v);
-    if(rng()*3.3>w)continue;
-    const j=k*3,col=tone(...v);
-    pos[j]=v[0]+x*.009;pos[j+1]=v[1]+y*.009;pos[j+2]=v[2]+z*.009;
-    colors.set(col,j);imp[k]=w;k++;
+   const count=Math.min(CHUNK,total-written),pos=new Float32Array(count*3),normal=new Float32Array(count*3),color=new Float32Array(count*3),imp=new Float32Array(count);
+   for(let k=0;k<count;k++){
+    const pick=rng()*sum;let lo=0,hi=triangles-1;
+    while(lo<hi){const mid=(lo+hi)>>>1;if(cdf[mid]<=pick)lo=mid+1;else hi=mid}
+    const a=indices[lo*3]*3,b=indices[lo*3+1]*3,c=indices[lo*3+2]*3;
+    const s=Math.sqrt(rng()),u=1-s,v=s*(1-rng()),w=1-u-v,j=k*3;
+    let nx=u*normals[a]+v*normals[b]+w*normals[c],ny=u*normals[a+1]+v*normals[b+1]+w*normals[c+1],nz=u*normals[a+2]+v*normals[b+2]+w*normals[c+2];
+    const len=Math.hypot(nx,ny,nz)||1;nx/=len;ny/=len;nz/=len;
+    const x=u*p[a]+v*p[b]+w*p[c],y=u*p[a+1]+v*p[b+1]+w*p[c+1],z=u*p[a+2]+v*p[b+2]+w*p[c+2];
+    pos.set([x+nx*.004,y+ny*.004,z+nz*.004],j);normal.set([nx,ny,nz],j);
+    for(let d=0;d<3;d++)color[j+d]=sourceColor?u*sourceColor[a+d]+v*sourceColor[b+d]+w*sourceColor[c+d]:[.19,.67,.88][d];imp[k]=importance(x,y,z);
    }
-   self.postMessage({type:"chunk",offset:written,count:n,position:pos.buffer,color:colors.buffer,importance:imp.buffer},[pos.buffer,colors.buffer,imp.buffer]);
-   written+=n;
+   self.postMessage({type:"chunk",offset:written,count,position:pos.buffer,normal:normal.buffer,color:color.buffer,importance:imp.buffer},[pos.buffer,normal.buffer,color.buffer,imp.buffer]);written+=count;
   }
   self.postMessage({type:"complete",count:total});
  }catch(e){self.postMessage({type:"error",message:String(e?.message||e)})}
