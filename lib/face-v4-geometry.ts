@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import {MeshSurfaceSampler} from "three/addons/math/MeshSurfaceSampler.js";
 
 export const MAX_FACE_POINTS=100000;
 export type PointCount=25000|50000|100000;
@@ -63,15 +62,20 @@ export function importanceAt(x:number,y:number,z:number){
 }
 export type FaceGeometryBundle={surface:THREE.BufferGeometry;cloud:THREE.BufferGeometry;contours:THREE.BufferGeometry;contourCount:number;dispose:()=>void};
 function makeContours(surface:THREE.BufferGeometry){
- const ray=new THREE.Raycaster();ray.ray.direction.set(0,0,-1);
- const mesh=new THREE.Mesh(surface,new THREE.MeshBasicMaterial({side:THREE.FrontSide}));
- mesh.updateMatrixWorld(true);
+ // Project curve coordinates against the parametric frontal face in constant time.
+ // Previous implementation raycast ~4,000 times against ~92,000 triangles, locking UI.
+ const surfaceZ=(x:number,y:number):number|null=>{
+  const rawY=(y+.05)/1.22,t=clamp((-y-.40)/.77);
+  const width=.95+.065*gauss(y,0,-.21,0,.26,1)-.20*Math.pow(t,2.2);
+  const rawX=x/width,rr=1-rawX*rawX-rawY*rawY;
+  if(rr<=.035)return null;
+  const z=sculpt(rawX,rawY,Math.sqrt(rr))[2];
+  return z>.20?z:null;
+ };
  const vertices:number[]=[],colors:number[]=[],weights:number[]=[];
  const put=(x:number,y:number,opacity=1)=>{
-  ray.ray.origin.set(x,y,3);
-  const hit=ray.intersectObject(mesh,false)[0];
-  if(!hit||hit.point.z<.23)return;
-  vertices.push(x,y,hit.point.z+.012);
+  const z=surfaceZ(x,y);if(z===null)return;
+  vertices.push(x,y,z+.018);
   colors.push(.12*opacity,.49*opacity,.73*opacity);weights.push(1.38);
  };
  function path(n:number,fn:(t:number)=>[number,number],strength=1){
@@ -107,7 +111,6 @@ function makeContours(surface:THREE.BufferGeometry){
    return [sign*(.925+.076*Math.cos(theta)),-.13+.21*Math.sin(theta)];
   },.48);
  }
- mesh.material.dispose();
  const out=new THREE.BufferGeometry();
  out.setAttribute("position",new THREE.Float32BufferAttribute(vertices,3));
  out.setAttribute("color",new THREE.Float32BufferAttribute(colors,3));
@@ -115,32 +118,20 @@ function makeContours(surface:THREE.BufferGeometry){
  return out;
 }
 export function createFaceGeometry():FaceGeometryBundle{
- const surface=new THREE.SphereGeometry(1,256,180);
- const p=surface.attributes.position;
- const c=new Float32Array(p.count*3),density=new Float32Array(p.count);
+ // Keep initial main-thread work small. 100k particles are built in a Web Worker.
+ const surface=new THREE.SphereGeometry(1,152,108);
+ const p=surface.attributes.position,c=new Float32Array(p.count*3);
  for(let i=0;i<p.count;i++){
-  const v=sculpt(p.getX(i),p.getY(i),p.getZ(i));
-  p.setXYZ(i,...v);c.set(tone(...v),i*3);density[i]=importanceAt(...v);
+  const v=sculpt(p.getX(i),p.getY(i),p.getZ(i));p.setXYZ(i,...v);c.set(tone(...v),i*3);
  }
  p.needsUpdate=true;surface.computeVertexNormals();
  surface.setAttribute("color",new THREE.BufferAttribute(c,3));
- surface.setAttribute("density",new THREE.BufferAttribute(density,1));
  const cloud=new THREE.BufferGeometry();
- const positions=new Float32Array(MAX_FACE_POINTS*3),rgb=new Float32Array(MAX_FACE_POINTS*3),imp=new Float32Array(MAX_FACE_POINTS);
- const tempMat=new THREE.MeshBasicMaterial(),mesh=new THREE.Mesh(surface,tempMat);
- const sampler=new MeshSurfaceSampler(mesh).setWeightAttribute("density").build();
- const v=new THREE.Vector3(),n=new THREE.Vector3();
- for(let i=0;i<MAX_FACE_POINTS;i++){
-  sampler.sample(v,n);
-  const w=importanceAt(v.x,v.y,v.z);
-  positions.set([v.x+n.x*.006,v.y+n.y*.006,v.z+n.z*.006],i*3);
-  rgb.set(tone(v.x,v.y,v.z),i*3);imp[i]=w;
- }
- tempMat.dispose();
- cloud.setAttribute("position",new THREE.BufferAttribute(positions,3));
- cloud.setAttribute("color",new THREE.BufferAttribute(rgb,3));
- cloud.setAttribute("aImportance",new THREE.BufferAttribute(imp,1));
- cloud.setDrawRange(0,MAX_FACE_POINTS);
+ const position=new THREE.BufferAttribute(new Float32Array(MAX_FACE_POINTS*3),3).setUsage(THREE.DynamicDrawUsage);
+ const color=new THREE.BufferAttribute(new Float32Array(MAX_FACE_POINTS*3),3).setUsage(THREE.DynamicDrawUsage);
+ const weight=new THREE.BufferAttribute(new Float32Array(MAX_FACE_POINTS),1).setUsage(THREE.DynamicDrawUsage);
+ cloud.setAttribute("position",position);cloud.setAttribute("color",color);cloud.setAttribute("aImportance",weight);
+ cloud.setDrawRange(0,0);
  const contours=makeContours(surface);
  return {surface,cloud,contours,contourCount:contours.getAttribute("position").count,dispose:()=>{surface.dispose();cloud.dispose();contours.dispose()}};
 }
