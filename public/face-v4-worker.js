@@ -19,9 +19,23 @@ self.onmessage=({data})=>{
   const total=Math.min(100000,Math.max(0,Math.trunc(data.count||0))),CHUNK=5000;
   let seed=19871623,written=0;
   const rng=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296};
+  const vertexCount=p.length/3;
+  const gcd=(a,b)=>b?gcd(b,a%b):a;
+  let stride=Math.max(1,Math.floor(vertexCount*.618));
+  while(gcd(stride,vertexCount)!==1)stride++;
   while(written<total){
    const count=Math.min(CHUNK,total-written),pos=new Float32Array(count*3),normal=new Float32Array(count*3),color=new Float32Array(count*3),imp=new Float32Array(count);
    for(let k=0;k<count;k++){
+    // Keep the source surface's contour rows visible; reserve 20% for feature detail.
+    const ordinal=written+k;
+    const ordered=Math.min(vertexCount,Math.floor(total*.8));
+    if(vertexCount>5000 && ordinal<ordered){
+     const vertex=(ordinal*stride)%vertexCount,a=vertex*3,j=k*3;
+     const len=Math.hypot(normals[a],normals[a+1],normals[a+2])||1;
+     for(let d=0;d<3;d++){normal[j+d]=normals[a+d]/len;pos[j+d]=p[a+d]+normal[j+d]*.004;color[j+d]=sourceColor?sourceColor[a+d]:[.055,.46,.98][d]}
+     imp[k]=importance(p[a],p[a+1],p[a+2]);
+     continue;
+    }
     const pick=rng()*sum;let lo=0,hi=triangles-1;
     while(lo<hi){const mid=(lo+hi)>>>1;if(cdf[mid]<=pick)lo=mid+1;else hi=mid}
     const a=indices[lo*3]*3,b=indices[lo*3+1]*3,c=indices[lo*3+2]*3;
