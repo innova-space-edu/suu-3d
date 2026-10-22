@@ -9,7 +9,7 @@ import {makeCleanPointMaterial} from "@/lib/face-point-shader";
 type Controls={view:FaceView;count:PointCount;mode:CleanMode;size:number;brightness:number;contrast:number;onProgress:(count:number)=>void;onError:(message:string)=>void};
 const modes:{id:CleanMode;name:string;description:string}[]=[
  {id:"puntos",name:"Solo puntos",description:"Partículas sobre la malla, con iluminación por relieve"},
- {id:"contornos",name:"Puntos + contornos",description:"Realce suave de la curvatura real, sin líneas superpuestas"},
+ {id:"contornos",name:"Puntos + contornos",description:"Superficie azul tenue y partículas siguiendo sus relieves"},
  {id:"superficie",name:"Superficie sólida",description:"Inspeccionar la anatomía y los puntos sobre la misma malla"}
 ];
 class ViewerBoundary extends Component<{children:ReactNode},{failed:boolean}>{
@@ -22,8 +22,8 @@ function Head({view,count,mode,size,brightness,contrast,onProgress,onError}:Cont
  const [received,setReceived]=useState(0);
  const {camera,gl}=useThree();
  useEffect(()=>{
-  camera.position.set(view==="frente"?0:view==="izquierda"?-3.8:3.8,.02,view==="frente"?3.8:0);
-  camera.lookAt(0,-.05,0);
+  camera.position.set(view==="frente"?0:view==="izquierda"?-4.8:4.8,-.27,view==="frente"?4.8:0);
+  camera.lookAt(0,-.30,0);
  },[camera,view]);
  useEffect(()=>{
   const abort=new AbortController();let bundle:FaceGeometryBundle|undefined,worker:Worker|undefined;
@@ -67,11 +67,11 @@ function Head({view,count,mode,size,brightness,contrast,onProgress,onError}:Cont
  },[pointMaterial,size,brightness,contrast,mode,gl]);
  if(!geometry)return null;
  return <group dispose={null}>
-  {mode!=="superficie"&&<mesh geometry={geometry.surface} renderOrder={-10}>
+  {mode==="puntos"&&<mesh geometry={geometry.surface} renderOrder={-10}>
    <meshBasicMaterial colorWrite={false} depthWrite={true} depthTest={true} side={THREE.FrontSide}/>
   </mesh>}
-  {mode==="superficie"&&<mesh geometry={geometry.surface} renderOrder={-4}>
-   <meshStandardMaterial color="#41768b" roughness={.85} metalness={0}/>
+  {mode!=="puntos"&&<mesh geometry={geometry.surface} renderOrder={-4}>
+   <meshStandardMaterial color={mode==="superficie"?"#41768b":"#428ad0"} vertexColors={mode!=="superficie"} emissive="#001127" emissiveIntensity={brightness*.3} roughness={.65} metalness={.15}/>
   </mesh>}
   <points geometry={geometry.cloud} renderOrder={2} frustumCulled={false}><primitive object={pointMaterial} attach="material"/></points>
  </group>;
@@ -81,24 +81,24 @@ export default function SuuFaceV4Lab(){
  const [view,setView]=useState<FaceView>("frente");
  const [count,setCount]=useState<PointCount>(100000);
  const [mode,setMode]=useState<CleanMode>("contornos");
- const [size,setSize]=useState(1.3);
- const [brightness,setBrightness]=useState(.95);
+ const [size,setSize]=useState(1.8);
+ const [brightness,setBrightness]=useState(1.05);
  const [contrast,setContrast]=useState(.87);
  const [attempt,setAttempt]=useState(0);
  const [loaded,setLoaded]=useState(0),[failure,setFailure]=useState("");
  return <main className="faceLab">
   <header className="labHeader">
-   <div><a href="/">← Volver a SUU</a><h1>SUU V4.2 · Rostro de puntos</h1>
+   <div><a href="/">← Volver a SUU</a><h1>SUU V4.3 · Rostro de puntos</h1>
     <p>Una misma malla 3D para el rostro y sus 100.000 puntos. Gira, acerca y compara los perfiles.</p></div>
    <span>LABORATORIO · ROSTRO PRINCIPAL SIN CAMBIOS</span>
   </header>
   <section className="labViewport" aria-label="Visor 3D experimental">
    <ViewerBoundary key={attempt}><Canvas style={{position:"absolute",inset:0,width:"100%",height:"100%"}} onCreated={({gl})=>{gl.debug.onShaderError=()=>setFailure("Error gráfico al dibujar los puntos. Pulsa Reintentar.")}} fallback={<div className="labLoading labError">Tu navegador no pudo iniciar WebGL.</div>} camera={{position:[0,.02,3.55],fov:43}} dpr={[1,1.6]} gl={{antialias:true}}>
     <color attach="background" args={["#020e20"]}/>
-    <ambientLight intensity={.48}/>
-    <directionalLight position={[1,3,4]} intensity={.65}/>
+    <ambientLight intensity={1.3*brightness}/>
+    <directionalLight position={[1,3,4]} intensity={2.5*brightness}/>
     <Head view={view} count={count} mode={mode} size={size} brightness={brightness} contrast={contrast} onProgress={setLoaded} onError={setFailure}/>
-    <OrbitControls key={view} target={[0,-.05,0]} enablePan={false} enableDamping minDistance={2.7} maxDistance={6}/>
+    <OrbitControls key={view} target={[0,-.30,0]} enablePan={false} enableDamping minDistance={2.7} maxDistance={6}/>
    </Canvas></ViewerBoundary>
    <span className="labCount">{Math.min(count,loaded).toLocaleString("es-CL")} / {count.toLocaleString("es-CL")} puntos · {view} · {mode}</span>
    {loaded<count&&!failure&&<div className="labLoading" role="status">{loaded===0?"Cargando malla facial…":`Generando puntos: ${Math.round(100*loaded/100000)}%`}</div>}
@@ -120,7 +120,7 @@ export default function SuuFaceV4Lab(){
     <input id="suu-dot-size" type="range" min=".7" max="2.6" step=".1" value={size} onChange={e=>setSize(Number(e.target.value))}/>
    </div>
    <div className="labTuning">
-    <label htmlFor="suu-dot-brightness">Intensidad <output>{Math.round(brightness*100)}%</output></label>
+    <label htmlFor="suu-dot-brightness">Brillo de todo el rostro <output>{Math.round(brightness*100)}%</output></label>
     <input id="suu-dot-brightness" type="range" min=".25" max="1.2" step=".05" value={brightness} onChange={e=>setBrightness(Number(e.target.value))}/>
    </div>
    <div className="labTuning">
@@ -128,6 +128,6 @@ export default function SuuFaceV4Lab(){
     <input id="suu-dot-opacity" type="range" min=".2" max="1" step=".05" value={contrast} onChange={e=>setContrast(Number(e.target.value))}/>
    </div>
   </section>
-  <p className="labNote">Puntos pequeños sin destellos; sombras y contornos calculados desde la malla. Base V4 con proporciones suavizadas, aún experimental: no es una reconstrucción exacta de las referencias ni incorpora expresiones faciales.</p>
+  <p className="labNote">Luz azul global, superficie de apoyo y puntos sobre sus relieves. Base V4 con párpados, iris, nariz y labios remodelados a partir de la vista frontal, aún experimental: no es una reconstrucción exacta de las referencias ni incorpora expresiones faciales.</p>
  </main>;
 }

@@ -11,3 +11,12 @@ The shader relies on Three.js-injected attributes (no duplicate `color` declarat
 The existing conversational avatar remains available on the home page. V4.2 has no morph targets or speech rig and must not be described as a finished replacement.
 
 Validation: `npm test`, `npm run build`, and browser checks of frontal/both profile views, point counts, solid mode and retry. Build success alone is not a WebGL rendering test.
+
+
+## V4.3 — reference-guided prototype
+
+Remodels the front of the original mesh with continuous eyelid, nose, lip and cheek reliefs. Iris/pupil colors are per-vertex approximations, not rigged eyeballs. Adds separate auricle and neck surfaces to the assembled sampling geometry. These overlapping surfaces are not a watertight production sculpt. The source GLB remains unchanged; remodeling happens at load time.
+
+At 100k, 80k samples follow existing mesh vertices and 20k are area/feature-weighted. A coprime permutation spreads progressive vertex samples over the whole model at lower display counts. The contour mode uses a blue supporting surface. Global brightness controls points and scene lights.
+
+This is an approximation from visual references, not a recovered identical face. No facial rig or visemes. Ear anatomy, eye topology, profile likeness and regular sampling density still require improvement.
