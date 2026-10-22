@@ -6,25 +6,25 @@ import * as THREE from "three";
 import {loadFaceGeometry,type FaceGeometryBundle,type FaceView,type PointCount,type CleanMode} from "@/lib/face-v4-geometry";
 import {makeCleanPointMaterial} from "@/lib/face-point-shader";
 
-type Controls={view:FaceView;count:PointCount;mode:CleanMode;size:number;brightness:number;contrast:number;onProgress:(count:number)=>void;onError:(message:string)=>void};
+type Controls={viewRevision:number;view:FaceView;count:PointCount;mode:CleanMode;size:number;brightness:number;contrast:number;onProgress:(count:number)=>void;onError:(message:string)=>void};
 const modes:{id:CleanMode;name:string;description:string}[]=[
  {id:"puntos",name:"Solo puntos",description:"Partículas sobre la malla, con iluminación por relieve"},
  {id:"contornos",name:"Puntos + contornos",description:"Superficie azul tenue y partículas siguiendo sus relieves"},
- {id:"superficie",name:"Superficie sólida",description:"Inspeccionar la anatomía y los puntos sobre la misma malla"}
+ {id:"superficie",name:"Superficie sólida",description:"Inspeccionar la anatomía sin partículas"}
 ];
 class ViewerBoundary extends Component<{children:ReactNode},{failed:boolean}>{
  state={failed:false};
  static getDerivedStateFromError(){return {failed:true}}
  render(){return this.state.failed?<div className="labLoading labError" role="alert">No se pudo iniciar el visor 3D. Comprueba la aceleración gráfica y pulsa Reintentar.</div>:this.props.children}
 }
-function Head({view,count,mode,size,brightness,contrast,onProgress,onError}:Controls){
+function Head({viewRevision,view,count,mode,size,brightness,contrast,onProgress,onError}:Controls){
  const [geometry,setGeometry]=useState<FaceGeometryBundle|null>(null);
  const [received,setReceived]=useState(0);
  const {camera,gl}=useThree();
  useEffect(()=>{
   camera.position.set(view==="frente"?0:view==="izquierda"?-4.8:4.8,-.27,view==="frente"?4.8:0);
   camera.lookAt(0,-.30,0);
- },[camera,view]);
+ },[camera,view,viewRevision]);
  useEffect(()=>{
   const abort=new AbortController();let bundle:FaceGeometryBundle|undefined,worker:Worker|undefined;
   const timer=setTimeout(()=>{abort.abort();worker?.terminate();onError("La carga tardó demasiado. Pulsa Reintentar.")},30000);
@@ -71,43 +71,46 @@ function Head({view,count,mode,size,brightness,contrast,onProgress,onError}:Cont
    <meshBasicMaterial colorWrite={false} depthWrite={true} depthTest={true} side={THREE.FrontSide}/>
   </mesh>}
   {mode!=="puntos"&&<mesh geometry={geometry.surface} renderOrder={-4}>
-   <meshStandardMaterial color={mode==="superficie"?"#41768b":"#428ad0"} vertexColors={mode!=="superficie"} emissive="#001127" emissiveIntensity={brightness*.3} roughness={.65} metalness={.15}/>
+   <meshStandardMaterial key={mode} color={mode==="superficie"?"#8495a5":"#4e7ca2"} vertexColors={mode!=="superficie"} emissive="#001127" emissiveIntensity={brightness*.10} roughness={.65} metalness={.15}/>
   </mesh>}
-  <points geometry={geometry.cloud} renderOrder={2} frustumCulled={false}><primitive object={pointMaterial} attach="material"/></points>
+  {mode!=="superficie"&&<points geometry={geometry.cloud} renderOrder={2} frustumCulled={false}><primitive object={pointMaterial} attach="material"/></points>}
  </group>;
 }
 
 export default function SuuFaceV4Lab(){
  const [view,setView]=useState<FaceView>("frente");
+ const [viewRevision,setViewRevision]=useState(0);
+ const [rotated,setRotated]=useState(false);
  const [count,setCount]=useState<PointCount>(100000);
  const [mode,setMode]=useState<CleanMode>("contornos");
- const [size,setSize]=useState(1.8);
- const [brightness,setBrightness]=useState(1.05);
- const [contrast,setContrast]=useState(.87);
+ const [size,setSize]=useState(1.0);
+ const [brightness,setBrightness]=useState(1.0);
+ const [contrast,setContrast]=useState(.72);
  const [attempt,setAttempt]=useState(0);
  const [loaded,setLoaded]=useState(0),[failure,setFailure]=useState("");
  return <main className="faceLab">
   <header className="labHeader">
-   <div><a href="/">← Volver a SUU</a><h1>SUU V4.3 · Rostro de puntos</h1>
-    <p>Una misma malla 3D para el rostro y sus 100.000 puntos. Gira, acerca y compara los perfiles.</p></div>
+   <div><a href="/">← Volver a SUU</a><h1>SUU V5 · Rostro de puntos</h1>
+    <p>Malla anatómica y 100.000 puntos sobre su superficie. Gira, acerca y compara los perfiles.</p></div>
    <span>LABORATORIO · ROSTRO PRINCIPAL SIN CAMBIOS</span>
   </header>
   <section className="labViewport" aria-label="Visor 3D experimental">
    <ViewerBoundary key={attempt}><Canvas style={{position:"absolute",inset:0,width:"100%",height:"100%"}} onCreated={({gl})=>{gl.debug.onShaderError=()=>setFailure("Error gráfico al dibujar los puntos. Pulsa Reintentar.")}} fallback={<div className="labLoading labError">Tu navegador no pudo iniciar WebGL.</div>} camera={{position:[0,.02,3.55],fov:43}} dpr={[1,1.6]} gl={{antialias:true}}>
     <color attach="background" args={["#020e20"]}/>
-    <ambientLight intensity={1.3*brightness}/>
-    <directionalLight position={[1,3,4]} intensity={2.5*brightness}/>
-    <Head view={view} count={count} mode={mode} size={size} brightness={brightness} contrast={contrast} onProgress={setLoaded} onError={setFailure}/>
-    <OrbitControls key={view} target={[0,-.30,0]} enablePan={false} enableDamping minDistance={2.7} maxDistance={6}/>
+    <ambientLight intensity={.65*brightness}/>
+    <directionalLight position={[1,3,4]} intensity={1.8*brightness}/>
+    <directionalLight position={[-3,1,3]} intensity={.75*brightness}/>
+    <Head viewRevision={viewRevision} view={view} count={count} mode={mode} size={size} brightness={brightness} contrast={contrast} onProgress={setLoaded} onError={setFailure}/>
+    <OrbitControls onStart={()=>setRotated(true)} key={`${view}-${viewRevision}`} target={[0,-.30,0]} enablePan={false} enableDamping minDistance={2.7} maxDistance={6}/>
    </Canvas></ViewerBoundary>
-   <span className="labCount">{Math.min(count,loaded).toLocaleString("es-CL")} / {count.toLocaleString("es-CL")} puntos · {view} · {mode}</span>
+   <span className="labCount">{Math.min(count,loaded).toLocaleString("es-CL")} / {count.toLocaleString("es-CL")} puntos · {rotated?"vista libre":view} · {mode}</span>
    {loaded<count&&!failure&&<div className="labLoading" role="status">{loaded===0?"Cargando malla facial…":`Generando puntos: ${Math.round(100*loaded/100000)}%`}</div>}
    {failure&&<div className="labLoading labError" role="alert">{failure}</div>}
   </section>
   <section className="labControls" aria-label="Controles de visualización">
    <div><strong>Visor</strong><div className="labButtons"><button onClick={()=>{setLoaded(0);setFailure("");setAttempt(v=>v+1)}}>Reintentar / restablecer</button></div></div>
    <div><strong>Vista</strong><div className="labButtons">
-    {(["frente","izquierda","derecha"] as FaceView[]).map(v=><button key={v} aria-pressed={v===view} onClick={()=>setView(v)}>{v==="frente"?"Frontal":v==="izquierda"?"Perfil izquierdo":"Perfil derecho"}</button>)}
+    {(["frente","izquierda","derecha"] as FaceView[]).map(v=><button key={v} aria-pressed={v===view} onClick={()=>{setRotated(false);setViewRevision(n=>n+1);setView(v)}}>{v==="frente"?"Frontal":v==="izquierda"?"Perfil izquierdo":"Perfil derecho"}</button>)}
    </div></div>
    <div><strong>Partículas</strong><div className="labButtons">
     {([25000,50000,100000] as PointCount[]).map(v=><button key={v} aria-pressed={v===count} onClick={()=>setCount(v)}>{v.toLocaleString("es-CL")}</button>)}
@@ -128,6 +131,6 @@ export default function SuuFaceV4Lab(){
     <input id="suu-dot-opacity" type="range" min=".2" max="1" step=".05" value={contrast} onChange={e=>setContrast(Number(e.target.value))}/>
    </div>
   </section>
-  <p className="labNote">Luz azul global, superficie de apoyo y puntos sobre sus relieves. Base V4 con párpados, iris, nariz y labios remodelados a partir de la vista frontal, aún experimental: no es una reconstrucción exacta de las referencias ni incorpora expresiones faciales.</p>
+  <p className="labNote">Luz azul global, superficie de apoyo y puntos sobre sus relieves. Base anatómica con párpados, orejas y cuello conectados; globos oculares con volumen, aún experimental: no es una reconstrucción exacta de las referencias ni incorpora expresiones faciales.</p>
  </main>;
 }

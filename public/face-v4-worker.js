@@ -7,7 +7,7 @@ self.onmessage=({data})=>{
   if(!p.length||p.length!==normals.length||indices.length%3)throw new Error("Malla facial inválida");
   const triangles=indices.length/3,cdf=new Float64Array(triangles);
   const gauss=(x,y,cx,cy,sx,sy)=>Math.exp(-.5*(((x-cx)/sx)**2+((y-cy)/sy)**2));
-  const importance=(x,y,z)=>z<.4?1:1+.8*gauss(x,y,0,-.3,.22,.35)+.9*gauss(x,y,0,-.66,.36,.14)+.7*(gauss(x,y,-.38,.16,.23,.14)+gauss(x,y,.38,.16,.23,.14));
+  const importance=(x,y,z)=>z<.4?1:1+.25*gauss(x,y,0,-.3,.22,.35)+.25*gauss(x,y,0,-.66,.36,.14)+.2*(gauss(x,y,-.38,.16,.23,.14)+gauss(x,y,.38,.16,.23,.14));
   let sum=0;
   for(let t=0;t<triangles;t++){
    const a=indices[t*3]*3,b=indices[t*3+1]*3,c=indices[t*3+2]*3;
@@ -17,29 +17,17 @@ self.onmessage=({data})=>{
   }
   if(!(sum>0&&Number.isFinite(sum)))throw new Error("Superficie facial vacía");
   const total=Math.min(100000,Math.max(0,Math.trunc(data.count||0))),CHUNK=5000;
-  let seed=19871623,written=0;
-  const rng=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296};
-  const vertexCount=p.length/3;
-  const gcd=(a,b)=>b?gcd(b,a%b):a;
-  let stride=Math.max(1,Math.floor(vertexCount*.618));
-  while(gcd(stride,vertexCount)!==1)stride++;
+  let written=0;
+  const halton=(i,base)=>{let f=1,r=0;while(i>0){f/=base;r+=f*(i%base);i=Math.floor(i/base)}return r};
   while(written<total){
    const count=Math.min(CHUNK,total-written),pos=new Float32Array(count*3),normal=new Float32Array(count*3),color=new Float32Array(count*3),imp=new Float32Array(count);
    for(let k=0;k<count;k++){
-    // Keep the source surface's contour rows visible; reserve 20% for feature detail.
-    const ordinal=written+k;
-    const ordered=Math.min(vertexCount,Math.floor(total*.8));
-    if(vertexCount>5000 && ordinal<ordered){
-     const vertex=(ordinal*stride)%vertexCount,a=vertex*3,j=k*3;
-     const len=Math.hypot(normals[a],normals[a+1],normals[a+2])||1;
-     for(let d=0;d<3;d++){normal[j+d]=normals[a+d]/len;pos[j+d]=p[a+d]+normal[j+d]*.004;color[j+d]=sourceColor?sourceColor[a+d]:[.055,.46,.98][d]}
-     imp[k]=importance(p[a],p[a+1],p[a+2]);
-     continue;
-    }
-    const pick=rng()*sum;let lo=0,hi=triangles-1;
+    // Area sampling decouples brightness from the mesh's dense eye/lip topology.
+    const ordinal=written+k+1;
+    const pick=halton(ordinal,2)*sum;let lo=0,hi=triangles-1;
     while(lo<hi){const mid=(lo+hi)>>>1;if(cdf[mid]<=pick)lo=mid+1;else hi=mid}
     const a=indices[lo*3]*3,b=indices[lo*3+1]*3,c=indices[lo*3+2]*3;
-    const s=Math.sqrt(rng()),u=1-s,v=s*(1-rng()),w=1-u-v,j=k*3;
+    const s=Math.sqrt(halton(ordinal,3)),u=1-s,v=s*(1-halton(ordinal,5)),w=1-u-v,j=k*3;
     let nx=u*normals[a]+v*normals[b]+w*normals[c],ny=u*normals[a+1]+v*normals[b+1]+w*normals[c+1],nz=u*normals[a+2]+v*normals[b+2]+w*normals[c+2];
     const len=Math.hypot(nx,ny,nz)||1;nx/=len;ny/=len;nz/=len;
     const x=u*p[a]+v*p[b]+w*p[c],y=u*p[a+1]+v*p[b+1]+w*p[c+1],z=u*p[a+2]+v*p[b+2]+w*p[c+2];

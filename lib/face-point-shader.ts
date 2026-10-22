@@ -14,7 +14,7 @@ void main(){
  vec3 n=normalize(normalMatrix*normal);
  float diffuse=max(0.0,dot(n,normalize(vec3(-0.5,0.65,1.0))));
  float fill=max(0.0,dot(n,normalize(vec3(0.65,-0.15,1.0))));
- float relief=0.62+0.25*diffuse+0.13*fill;
+ float relief=0.24+0.56*diffuse+0.20*fill;
  float edge=pow(1.0-abs(dot(n,normalize(-mv.xyz))),2.0);
  float distanceScale=clamp(3.6/max(2.0,-mv.z),0.7,1.55);
  vPower=clamp(aImportance,1.0,3.2);
