@@ -100,7 +100,7 @@ export async function loadFaceGeometry(signal:AbortSignal):Promise<FaceGeometryB
   for(let i=0;i<ep.count;i++){
    const u=ep.getX(i),v=ep.getY(i),w=ep.getZ(i),r=Math.hypot(u,v);
    const relief=w>=0?.035+.10*gaussian(r,.80,.12)-.025*gaussian(r,.30,.25):w*.07;
-   ep.setXYZ(i,side*(.87+.14*u),-.14+.27*v,.015+relief+.05*u);
+   ep.setXYZ(i,side*(.87+.07*u+.866*relief),-.14+.27*v,.015+.5*relief-.121*u);
   }
   // Reflection changes handedness; maintain outward-facing triangles.
   if(side<0&&ear.index)for(let i=0;i<ear.index.count;i+=3){const b=ear.index.getX(i+1);ear.index.setX(i+1,ear.index.getX(i+2));ear.index.setX(i+2,b)}
