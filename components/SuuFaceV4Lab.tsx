@@ -3,6 +3,7 @@ import {Canvas} from "@react-three/fiber";
 import {OrbitControls} from "@react-three/drei";
 import {useState} from "react";
 import {type FaceView,type PointCount,type CleanMode} from "@/lib/face-v4-geometry";
+import {VISEMES} from "@/lib/lip-sync";
 import {FACE_CHANNELS,type FacePose} from "@/lib/face-rig";
 import {AnatomicalHead,ViewerBoundary} from "./SuuAnatomicalHead";
 
@@ -44,6 +45,7 @@ export default function SuuFaceV4Lab(){
    {failure&&<div className="labLoading labError" role="alert">{failure}</div>}
   </section>
   <section className="labControls" aria-label="Controles de visualización">
+   <div><strong>Formas de pronunciación</strong><div className="labButtons">{["A","E","I","O","U","MBP"].map(v=><button key={v} onClick={()=>{setTalk(false);setPose(VISEMES[v])}}>{v==="MBP"?"Cerrar M/P/B":v}</button>)}</div></div>
    <div><strong>Expresiones</strong><div className="labButtons">
     <button onClick={()=>{setPose({});setTalk(false)}}>Neutral</button>
     <button onClick={()=>{setTalk(false);setPose({jaw:.65})}}>Abrir boca</button>
@@ -76,6 +78,6 @@ export default function SuuFaceV4Lab(){
     <input id="suu-dot-opacity" type="range" min=".2" max="1" step=".05" value={contrast} onChange={e=>setContrast(Number(e.target.value))}/>
    </div>
   </section>
-  <p className="labNote">Luz azul global, superficie de apoyo y puntos sobre sus relieves. Base anatómica con párpados, orejas y cuello conectados; globos oculares con volumen, aún experimental: no es una reconstrucción exacta de las referencias y sus expresiones son deformaciones experimentales. La demostración de habla es simulada; la conversación usa la amplitud del audio, sin alineación de fonemas.</p>
+  <p className="labNote">Luz azul global, superficie de apoyo y puntos sobre sus relieves. Base anatómica con párpados, orejas y cuello conectados; globos oculares con volumen, aún experimental: no es una reconstrucción exacta de las referencias y sus expresiones son deformaciones experimentales. La demostración de habla es simulada; la conversación combina tiempos por palabra cuando la voz los entrega y formas de labios estimadas dentro de cada palabra. No es alineación fonética exacta.</p>
  </main>;
 }

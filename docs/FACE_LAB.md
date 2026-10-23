@@ -47,3 +47,10 @@ The lab offers direct pose controls, neutral/reset and a clearly labeled simulat
 ## V5.2 — mouth refinement
 
 Replace the smile's discontinuous midline pull and steep V-shaped lift with a smooth lateral pull, reduced corner elevation and gentle cheek support. Lip rounding and widening have smaller bounded displacements. Jaw opening follows a curved lip seam with a wider transition through the cheeks. The serious target now coordinates slight lip compression, eyelid narrowing and brow lowering. No teeth or dental geometry are added. These remain procedural approximations requiring visual assessment, not a completed anatomical sculpt.
+
+
+## V5.3 — word-timed lip shapes
+
+`/api/voice` accepts an optional `timings:true` request and returns base64 audio plus Edge TTS word windows in seconds. The original binary audio contract is preserved when this option is absent. The browser builds letter-derived A/E/I/O/U, M/P/B closure and consonant cues inside those measured word windows, sampled from `audio.currentTime`; pauses, seeks and playback rate therefore follow the player clock. This is word-aligned, orthographic estimation, not measured phoneme alignment.
+
+Voices without alignment use a duration-scaled estimate; browser synthesis uses word boundary events where supported with a text-duration fallback. LiveKit continues to use amplitude because its remote text/audio alignment is unavailable. Lip channels settle faster than brow/cheek channels, with fast closure and a return to rest in gaps. Longer words add a small brow emphasis. Stop and unmount clear cue sources; canceled synthesis responses cannot restart old speech. Six lab presets let users compare vowel shapes and M/P/B closure, without dental geometry.

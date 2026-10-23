@@ -3,10 +3,11 @@ import {Canvas,useFrame,useThree} from "@react-three/fiber";
 import {OrbitControls} from "@react-three/drei";
 import {useEffect,useRef,useState} from "react";
 import * as THREE from "three";
+import type {LipSignal} from "@/hooks/useLipSync";
 import type {FaceMotion} from "@/hooks/useSuuFaceTracking";
 import {AnatomicalHead,ViewerBoundary} from "./SuuAnatomicalHead";
-type Props={speaking:boolean;listening:boolean;energy:number;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive?:boolean};
-function Scene({speaking,listening,energy,quality,solid,tracking,cameraActive,onProgress,onError}:Props&{onProgress:(n:number)=>void;onError:(s:string)=>void}){
+type Props={lipSync?:LipSignal;speaking:boolean;listening:boolean;energy:number;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive?:boolean};
+function Scene({lipSync,speaking,listening,energy,quality,solid,tracking,cameraActive,onProgress,onError}:Props&{onProgress:(n:number)=>void;onError:(s:string)=>void}){
  const head=useRef<THREE.Group>(null);
  const {camera,size}=useThree();
  useEffect(()=>{
@@ -32,7 +33,7 @@ function Scene({speaking,listening,energy,quality,solid,tracking,cameraActive,on
   <directionalLight position={[1,3,4]} intensity={1.8*brightness}/>
   <directionalLight position={[-3,1,3]} intensity={.75*brightness}/>
   <group ref={head}>
-   <AnatomicalHead speaking={speaking} listening={listening} energy={energy} tracking={cameraActive?tracking:undefined} manageCamera={false} viewRevision={0} view="frente" count={quality==="high"?100000:25000} mode={solid?"superficie":"contornos"} size={1} brightness={brightness} contrast={.72} onProgress={onProgress} onError={onError}/>
+   <AnatomicalHead lipSync={lipSync} speaking={speaking} listening={listening} energy={energy} tracking={cameraActive?tracking:undefined} manageCamera={false} viewRevision={0} view="frente" count={quality==="high"?100000:25000} mode={solid?"superficie":"contornos"} size={1} brightness={brightness} contrast={.72} onProgress={onProgress} onError={onError}/>
   </group>
   <OrbitControls target={[0,-.15,0]} enablePan={false} enableDamping minDistance={3.1} maxDistance={14}/>
  </>;
