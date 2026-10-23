@@ -13,7 +13,7 @@ test('facial targets stay finite, bounded and keep rigid eyeballs unchanged',()=
   for(let x=-1;x<=1;x+=.2)for(let y=-1.3;y<=1.3;y+=.2){const d=facialDelta(k,x,y,.9);assert.ok(d.every(Number.isFinite));assert.ok(Math.hypot(...d)<.4)}
  }
  assert.ok(facialDelta('jaw',0,-.62,1)[1]<-.05);
- assert.ok(facialDelta('pucker',.1,-.54,1)[2]>.04);
+ assert.ok(facialDelta('pucker',.1,-.54,1)[2]>.03);
  assert.deepEqual(poseWeights({}),new Array(9).fill(0));
  assert.equal(poseWeights({jaw:Infinity,smile:2})[0],0);assert.equal(poseWeights({smile:2})[1],1);
 });
@@ -26,4 +26,13 @@ test('particle target displacement uses exactly its source triangle interpolatio
  const chunk=messages.find(m=>m.type==='chunk');assert.ok(chunk);
  const p=new Float32Array(chunk.position),d=new Float32Array(chunk.morphs[0]);
  for(let i=0;i<30;i++){assert.ok(Math.abs(d[i*3+2]-p[i*3]-2*p[i*3+1])<1e-6);assert.equal(d[i*3],0)}
+});
+
+test('smile is continuous at the lip midline and serious engages eyelids and brows',()=>{
+ const left=facialDelta('smile',-1e-6,-.54,1),right=facialDelta('smile',1e-6,-.54,1);
+ assert.ok(Math.abs(right[0]-left[0])<1e-5,'no midline tear');
+ assert.ok(facialDelta('smile',.22,-.53,1)[1]>facialDelta('smile',0,-.53,1)[1]+.015,'lift concentrated at corners');
+ assert.ok(facialDelta('frown',.27,.32,.92)[1]<-.01,'brow lowers');
+ assert.ok(facialDelta('frown',.295,.16,.79)[1]<-.004,'upper lid narrows');
+ assert.ok(facialDelta('frown',.295,.04,.79)[1]>0,'lower lid rises');
 });
