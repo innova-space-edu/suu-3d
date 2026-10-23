@@ -1,5 +1,6 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
+import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import dynamic from "next/dynamic";
 import {Mic,MicOff,Volume2,VolumeX,X,AudioLines} from "lucide-react";
@@ -15,30 +16,32 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
  const [subtitle,setSubtitle]=useState("Activa el micrófono para conversar con SUU.");
  const [provider,setProvider]=useState(""),[muted,setMuted]=useState(false),[energy,setEnergy]=useState(.04);
  const meter=useSpeechMeter(setEnergy);
+ const lips=useLipSync();
+ const speechGeneration=useRef(0);
  const recognizer=useRef<Recognition|null>(null),audio=useRef<HTMLAudioElement|null>(null),audioUrl=useRef<string|null>(null);
  const onTurnRef=useRef(onTurn),stopSignal=useRef(false),history=useRef(initial.slice(-14)),abort=useRef<AbortController|null>(null),timer=useRef<ReturnType<typeof setInterval>|null>(null),phaseRef=useRef("idle"),listeningRef=useRef(false);
  onTurnRef.current=onTurn;
  const setPhaseNow=(next:typeof phase)=>{phaseRef.current=next;setPhase(next)};
- const releaseAudio=useCallback(()=>{meter.stop();if(audio.current){audio.current.pause();audio.current.src="";audio.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}if(timer.current){clearInterval(timer.current);timer.current=null}if(typeof window!=="undefined")window.speechSynthesis?.cancel();setEnergy(0)},[meter.stop]);
+ const releaseAudio=useCallback(()=>{speechGeneration.current++;lips.stop();meter.stop();if(audio.current){audio.current.onended=null;audio.current.onerror=null;audio.current.pause();audio.current.src="";audio.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}if(timer.current){clearInterval(timer.current);timer.current=null}if(typeof window!=="undefined")window.speechSynthesis?.cancel();setEnergy(0)},[meter.stop,lips.stop]);
  const stop=useCallback(()=>{stopSignal.current=true;abort.current?.abort();abort.current=null;recognizer.current?.stop();recognizer.current=null;listeningRef.current=false;releaseAudio();setPhaseNow("idle");setSubtitle("Conversación pausada. Pulsa para reanudar.");},[releaseAudio]);
  useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();releaseAudio()},[releaseAudio]);
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
  const speak=async(text:string)=>{
   if(stopSignal.current)return;
   if(muted){setPhaseNow("idle");restart();return}
-  setPhaseNow("speaking");setSubtitle(text);let started=false;
+  releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(text);let started=false;
   if(!voiceId.startsWith("browser:")){
    try{
-    const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId}),signal:abort.current?.signal});
+    const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId,timings:true}),signal:abort.current?.signal});
     if(!res.ok)throw new Error("No hay motor de voz en línea");
-    const blob=await res.blob();
-    if(stopSignal.current)return;
-    audioUrl.current=URL.createObjectURL(blob);const player=new Audio(audioUrl.current);audio.current=player;
+    const {blob,words}=await readVoiceResponse(res);
+    if(stopSignal.current||ticket!==speechGeneration.current)return;
+    audioUrl.current=URL.createObjectURL(blob);const player=new Audio(audioUrl.current);audio.current=player;lips.audio(player,text.slice(0,1900),words);
     player.onended=()=>{releaseAudio();setPhaseNow("idle");restart()};
     player.onerror=()=>{releaseAudio();setPhaseNow("idle");restart()};
     void meter.start(player);
     started=true;await player.play();
-   }catch{releaseAudio();started=false}
+   }catch{if(ticket!==speechGeneration.current)return;releaseAudio();started=false}
   }
   if(started||stopSignal.current)return;
   if(!("speechSynthesis" in window)){setPhaseNow("error");setSubtitle("No se encontró ningún sintetizador de voz.");return}
@@ -48,7 +51,7 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
   words.onstart=()=>{let t=0;timer.current=setInterval(()=>{t+=.85;setEnergy(.15+.32*Math.abs(Math.sin(t)))},90)};
   words.onend=()=>{releaseAudio();setPhaseNow("idle");restart()};
   words.onerror=()=>{releaseAudio();setPhaseNow("idle");restart()};
-  window.speechSynthesis.speak(words);
+  lips.utterance(words);window.speechSynthesis.speak(words);
  };
  const converse=async(text:string)=>{
   if(stopSignal.current)return;
@@ -81,7 +84,7 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
  const toggle=()=>{if(phaseRef.current!=="idle"&&phaseRef.current!=="error"){stop();return}stopSignal.current=false;void listen()};
  return <div className="voiceOnlyOverlay" role="dialog" aria-label="Modo conversación de voz con SUU" aria-modal="true">
   <header className="voiceHeader"><div><b>SUU</b><span>CONVERSACIÓN SOLO VOZ · {provider||"LISTA"}</span></div><button onClick={()=>{stop();onClose()}} aria-label="Cerrar modo voz"><X size={25}/></button></header>
-  <div className="voiceScene"><Avatar speaking={phase==="speaking"} listening={phase==="listening"} energy={energy} quality={quality} solid={solid} tracking={tracking} cameraActive={cameraActive}/></div>
+  <div className="voiceScene"><Avatar lipSync={lips.signal} speaking={phase==="speaking"} listening={phase==="listening"} energy={energy} quality={quality} solid={solid} tracking={tracking} cameraActive={cameraActive}/></div>
   <div className="voiceBottom"><div className={"voiceStatus "+phase}><AudioLines size={19}/><span>{phase==="listening"?"ESCUCHANDO":phase==="thinking"?"PENSANDO":phase==="speaking"?"HABLANDO":phase==="error"?"REINTENTAR":"EN ESPERA"}</span></div>
    <p aria-live="polite">{subtitle}</p>
    <div className="voiceControls"><button className="voiceRound" onClick={toggle} title={phase==="idle"||phase==="error"?"Iniciar voz":"Pausar voz"}>{phase==="idle"||phase==="error"?<Mic size={27}/>:<MicOff size={27}/>}</button><button className="voiceSmall" onClick={()=>setMuted(v=>!v)} title={muted?"Activar audio":"Silenciar audio"}>{muted?<VolumeX size={20}/>:<Volume2 size={20}/>}</button><button className="voiceSmall" onClick={()=>{stop();onClose()}}>Salir</button></div>
