@@ -1,5 +1,6 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
+import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import dynamic from "next/dynamic";
 import {Mic,MicOff,Volume2,VolumeX,X,AudioLines} from "lucide-react";
 import type {ChatMessage,Domain} from "@/lib/providers";
@@ -13,11 +14,12 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
  const [phase,setPhase]=useState<"idle"|"listening"|"thinking"|"speaking"|"error">("idle");
  const [subtitle,setSubtitle]=useState("Activa el micrófono para conversar con SUU.");
  const [provider,setProvider]=useState(""),[muted,setMuted]=useState(false),[energy,setEnergy]=useState(.04);
+ const meter=useSpeechMeter(setEnergy);
  const recognizer=useRef<Recognition|null>(null),audio=useRef<HTMLAudioElement|null>(null),audioUrl=useRef<string|null>(null);
  const onTurnRef=useRef(onTurn),stopSignal=useRef(false),history=useRef(initial.slice(-14)),abort=useRef<AbortController|null>(null),timer=useRef<ReturnType<typeof setInterval>|null>(null),phaseRef=useRef("idle"),listeningRef=useRef(false);
  onTurnRef.current=onTurn;
  const setPhaseNow=(next:typeof phase)=>{phaseRef.current=next;setPhase(next)};
- const releaseAudio=useCallback(()=>{if(audio.current){audio.current.pause();audio.current.src="";audio.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}if(timer.current){clearInterval(timer.current);timer.current=null}if(typeof window!=="undefined")window.speechSynthesis?.cancel();setEnergy(.04)},[]);
+ const releaseAudio=useCallback(()=>{meter.stop();if(audio.current){audio.current.pause();audio.current.src="";audio.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}if(timer.current){clearInterval(timer.current);timer.current=null}if(typeof window!=="undefined")window.speechSynthesis?.cancel();setEnergy(0)},[meter.stop]);
  const stop=useCallback(()=>{stopSignal.current=true;abort.current?.abort();abort.current=null;recognizer.current?.stop();recognizer.current=null;listeningRef.current=false;releaseAudio();setPhaseNow("idle");setSubtitle("Conversación pausada. Pulsa para reanudar.");},[releaseAudio]);
  useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();releaseAudio()},[releaseAudio]);
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
@@ -34,7 +36,7 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
     audioUrl.current=URL.createObjectURL(blob);const player=new Audio(audioUrl.current);audio.current=player;
     player.onended=()=>{releaseAudio();setPhaseNow("idle");restart()};
     player.onerror=()=>{releaseAudio();setPhaseNow("idle");restart()};
-    let time=0;timer.current=setInterval(()=>{time+=.7;setEnergy(.1+.37*Math.abs(Math.sin(time)))},100);
+    void meter.start(player);
     started=true;await player.play();
    }catch{releaseAudio();started=false}
   }

@@ -5,6 +5,7 @@ self.onmessage=({data})=>{
  try{
   const p=new Float32Array(data.position),normals=new Float32Array(data.normal),indices=new Uint32Array(data.index),sourceColor=data.color?new Float32Array(data.color):null;
   if(!p.length||p.length!==normals.length||indices.length%3)throw new Error("Malla facial inválida");
+  const morphs=(data.morphs||[]).map(b=>new Float32Array(b)),morphNormals=(data.morphNormals||[]).map(b=>new Float32Array(b));
   const triangles=indices.length/3,cdf=new Float64Array(triangles);
   const gauss=(x,y,cx,cy,sx,sy)=>Math.exp(-.5*(((x-cx)/sx)**2+((y-cy)/sy)**2));
   const importance=(x,y,z)=>z<.4?1:1+.25*gauss(x,y,0,-.3,.22,.35)+.25*gauss(x,y,0,-.66,.36,.14)+.2*(gauss(x,y,-.38,.16,.23,.14)+gauss(x,y,.38,.16,.23,.14));
@@ -21,6 +22,7 @@ self.onmessage=({data})=>{
   const halton=(i,base)=>{let f=1,r=0;while(i>0){f/=base;r+=f*(i%base);i=Math.floor(i/base)}return r};
   while(written<total){
    const count=Math.min(CHUNK,total-written),pos=new Float32Array(count*3),normal=new Float32Array(count*3),color=new Float32Array(count*3),imp=new Float32Array(count);
+   const morphChunks=morphs.map(()=>new Float32Array(count*3)),normalChunks=morphNormals.map(()=>new Float32Array(count*3));
    for(let k=0;k<count;k++){
     // Area sampling decouples brightness from the mesh's dense eye/lip topology.
     const ordinal=written+k+1;
@@ -31,10 +33,11 @@ self.onmessage=({data})=>{
     let nx=u*normals[a]+v*normals[b]+w*normals[c],ny=u*normals[a+1]+v*normals[b+1]+w*normals[c+1],nz=u*normals[a+2]+v*normals[b+2]+w*normals[c+2];
     const len=Math.hypot(nx,ny,nz)||1;nx/=len;ny/=len;nz/=len;
     const x=u*p[a]+v*p[b]+w*p[c],y=u*p[a+1]+v*p[b+1]+w*p[c+1],z=u*p[a+2]+v*p[b+2]+w*p[c+2];
+    for(let t=0;t<morphs.length;t++)for(let d=0;d<3;d++){morphChunks[t][j+d]=u*morphs[t][a+d]+v*morphs[t][b+d]+w*morphs[t][c+d];normalChunks[t][j+d]=u*morphNormals[t][a+d]+v*morphNormals[t][b+d]+w*morphNormals[t][c+d]}
     pos.set([x+nx*.004,y+ny*.004,z+nz*.004],j);normal.set([nx,ny,nz],j);
     for(let d=0;d<3;d++)color[j+d]=sourceColor?u*sourceColor[a+d]+v*sourceColor[b+d]+w*sourceColor[c+d]:[.19,.67,.88][d];imp[k]=importance(x,y,z);
    }
-   self.postMessage({type:"chunk",offset:written,count,position:pos.buffer,normal:normal.buffer,color:color.buffer,importance:imp.buffer},[pos.buffer,normal.buffer,color.buffer,imp.buffer]);written+=count;
+   self.postMessage({type:"chunk",offset:written,count,position:pos.buffer,normal:normal.buffer,color:color.buffer,importance:imp.buffer,morphs:morphChunks.map(x=>x.buffer),morphNormals:normalChunks.map(x=>x.buffer)},[pos.buffer,normal.buffer,color.buffer,imp.buffer,...morphChunks.map(x=>x.buffer),...normalChunks.map(x=>x.buffer)]);written+=count;
   }
   self.postMessage({type:"complete",count:total});
  }catch(e){self.postMessage({type:"error",message:String(e?.message||e)})}

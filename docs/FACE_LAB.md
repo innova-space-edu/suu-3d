@@ -35,3 +35,10 @@ Mesh provenance and license: https://github.com/makehumancommunity/makehuman/blo
 ## V5 — main page integration
 
 The approved V5 appearance now replaces the procedural avatar on the main page and in voice mode. All three views share `SuuAnatomicalHead`, its loader, sampling worker and materials. High quality displays 100,000 points; economy displays 25,000. The main viewer preserves head-orientation tracking and a subtle audio-driven brightness response. It does not animate lips, eyelids or facial expressions. Loading, errors and retry are visible in both conversation views. The old `NEXT_PUBLIC_SUU_HEAD_MODEL` override is no longer used by the main avatar.
+
+
+## V5.1 — facial animation
+
+Nine bounded procedural morph targets are built on the approved neutral mesh: jaw, smile, frown, pucker, wide lips, left/right blink and raised/lowered brows. Eyes remain rigid. These are an initial runtime rig, not hand-sculpted ARKit shapes. The worker projects each target displacement and normal delta through the same barycentric coordinates as each particle. Mesh, depth pass and particles share smoothed weights; the point shader includes Three.js morph chunks. GPU morph textures are created only once the complete point buffer is available.
+
+The lab offers direct pose controls, neutral/reset and a clearly labeled simulated talking preview. Conversation views drive jaw opening from measured Web Audio RMS of the played audio; browser speech synthesis uses an approximate pulse fallback because its PCM stream is unavailable. LiveKit uses the remote participant audio level. There is no phoneme alignment, independent tongue animation or detailed dental rig. Blinking is automatic and camera blink/smile/mouth coefficients can drive the rig.
