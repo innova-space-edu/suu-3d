@@ -8,10 +8,17 @@ uniform float uBrightness;
 uniform float uContours;
 varying vec3 vColor;
 varying float vPower;
+#include <common>
+#include <morphtarget_pars_vertex>
 void main(){
- vec4 mv=modelViewMatrix*vec4(position,1.0);
+ #include <morphinstance_vertex>
+ #include <begin_vertex>
+ #include <morphtarget_vertex>
+ vec3 objectNormal=normal;
+ #include <morphnormal_vertex>
+ vec4 mv=modelViewMatrix*vec4(transformed,1.0);
  gl_Position=projectionMatrix*mv;
- vec3 n=normalize(normalMatrix*normal);
+ vec3 n=normalize(normalMatrix*objectNormal);
  float diffuse=max(0.0,dot(n,normalize(vec3(-0.5,0.65,1.0))));
  float fill=max(0.0,dot(n,normalize(vec3(0.65,-0.15,1.0))));
  float relief=0.24+0.56*diffuse+0.20*fill;

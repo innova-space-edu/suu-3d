@@ -32,7 +32,7 @@ function Scene({speaking,listening,energy,quality,solid,tracking,cameraActive,on
   <directionalLight position={[1,3,4]} intensity={1.8*brightness}/>
   <directionalLight position={[-3,1,3]} intensity={.75*brightness}/>
   <group ref={head}>
-   <AnatomicalHead manageCamera={false} viewRevision={0} view="frente" count={quality==="high"?100000:25000} mode={solid?"superficie":"contornos"} size={1} brightness={brightness} contrast={.72} onProgress={onProgress} onError={onError}/>
+   <AnatomicalHead speaking={speaking} listening={listening} energy={energy} tracking={cameraActive?tracking:undefined} manageCamera={false} viewRevision={0} view="frente" count={quality==="high"?100000:25000} mode={solid?"superficie":"contornos"} size={1} brightness={brightness} contrast={.72} onProgress={onProgress} onError={onError}/>
   </group>
   <OrbitControls target={[0,-.15,0]} enablePan={false} enableDamping minDistance={3.1} maxDistance={14}/>
  </>;
@@ -41,8 +41,8 @@ export default function SuuAvatar(props:Props){
  const [loaded,setLoaded]=useState(0),[error,setError]=useState(""),[attempt,setAttempt]=useState(0);
  const count=props.quality==="high"?100000:25000;
  const retry=()=>{setError("");setLoaded(0);setAttempt(n=>n+1)};
- return <div className="avatarHost" data-avatar-version="5">
-  <ViewerBoundary key={attempt}><Canvas style={{position:"absolute",inset:0,width:"100%",height:"100%"}} dpr={[1,props.quality==="eco"?1.2:1.6]} gl={{antialias:props.quality==="high"}} camera={{position:[0,-.15,4.8],fov:43}} fallback={<div className="labLoading labError" role="alert">No se pudo iniciar WebGL.</div>} onCreated={({gl})=>{gl.debug.onShaderError=()=>setError("No se pudo dibujar el rostro.")}}><Scene {...props} onProgress={setLoaded} onError={setError}/></Canvas></ViewerBoundary>
+ return <div className="avatarHost" data-avatar-version="5" data-speech-energy={props.speaking?props.energy:0}>
+  <ViewerBoundary key={attempt}><Canvas style={{position:"absolute",inset:0,width:"100%",height:"100%"}} dpr={[1,props.quality==="eco"?1.2:1.6]} gl={{antialias:props.quality==="high"}} camera={{position:[0,-.15,4.8],fov:43}} fallback={<div className="labLoading labError" role="alert">No se pudo iniciar WebGL.</div>} onCreated={({gl})=>{gl.debug.onShaderError=(context,program,vertex,fragment)=>{console.error("[SUU shader]",context.getProgramInfoLog(program),context.getShaderInfoLog(vertex),context.getShaderInfoLog(fragment));setError("No se pudo dibujar el rostro.")}}}><Scene {...props} onProgress={setLoaded} onError={setError}/></Canvas></ViewerBoundary>
   {loaded<count&&!error&&<div className="labLoading" role="status">{loaded?"Preparando puntos…":"Cargando rostro…"}</div>}
   {error&&<div className="labLoading labError" role="alert">{error}</div>}
   <button className="avatarRetry" onClick={retry} aria-label="Recargar rostro" title="Recargar rostro">↻</button>

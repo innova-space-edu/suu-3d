@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import {GLTFLoader} from "three/examples/jsm/loaders/GLTFLoader.js";
+import {addFaceRig,FACE_CHANNELS} from "./face-rig";
 export const MAX_FACE_POINTS=100000;
 export type PointCount=25000|50000|100000;
 export type FaceView="frente"|"izquierda"|"derecha";
@@ -24,9 +25,13 @@ export async function loadFaceGeometry(signal:AbortSignal):Promise<FaceGeometryB
  if(signal.aborted){surface.dispose();throw new DOMException("Cancelado","AbortError")}
  surface.computeVertexNormals();
  surface.computeBoundingSphere();
+ addFaceRig(surface);
  const cloud=new THREE.BufferGeometry();
  for(const [name,width] of [["position",3],["normal",3],["color",3],["aImportance",1]] as const)
   cloud.setAttribute(name,new THREE.BufferAttribute(new Float32Array(MAX_FACE_POINTS*width),width).setUsage(THREE.DynamicDrawUsage));
+ cloud.morphTargetsRelative=true;
+ cloud.morphAttributes.position=FACE_CHANNELS.map(name=>{const a=new THREE.BufferAttribute(new Float32Array(MAX_FACE_POINTS*3),3);a.name=name;return a});
+ cloud.morphAttributes.normal=FACE_CHANNELS.map(()=>new THREE.BufferAttribute(new Float32Array(MAX_FACE_POINTS*3),3));
  cloud.setDrawRange(0,0);
  // Bounds are explicit: zero-filled progressive buffers must not cache a zero-radius sphere.
  cloud.boundingSphere=surface.boundingSphere!.clone();cloud.boundingSphere.radius+=.02;
