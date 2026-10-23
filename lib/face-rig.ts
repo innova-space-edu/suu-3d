@@ -7,17 +7,32 @@ const g=(v:number,s:number)=>Math.exp(-.5*(v/s)**2);
 /** Small, bounded anatomical displacements on the approved neutral mesh. Eyes stay rigid. */
 export function facialDelta(channel:FaceChannel,x:number,y:number,z:number,eyeball=false):[number,number,number]{
  if(eyeball)return [0,0,0];
- const front=smooth(.42,.78,z),mouth=g(x,.23)*g(y+.54,.13)*front;
+ const front=smooth(.48,.82,z),ax=Math.abs(x);
+ // Flat support over the lip body, smooth falloff into cheeks. No sign(x) seam at the midline.
+ const lip=(1-smooth(.20,.43,ax))*g(y+.545,.105)*front;
+ const corner=(g(x-.225,.10)+g(x+.225,.10))*g(y+.525,.105)*front;
  switch(channel){
   case "jaw":{
-   const lower=(1-smooth(-.555,-.515,y))*smooth(-1.18,-.84,y)*g(x,.6)*smooth(.12,.6,z);
-   const a=.24*lower,dy=y+.27,dz=z-.38;
+   // Narrow transition at the lip seam; broader transition into each cheek, avoiding a horizontal crease.
+   const seam=-.548+.030*Math.min(1,(x/.25)**2),width=.018+.15*smooth(.19,.48,ax);
+   const lower=(1-smooth(seam-width,seam+width,y))*smooth(-1.22,-.86,y)*(1-smooth(.48,.78,ax))*smooth(.12,.65,z);
+   const a=.18*lower,dy=y+.25,dz=z-.38;
    return [0,dy*Math.cos(a)-dz*Math.sin(a)-dy,dy*Math.sin(a)+dz*Math.cos(a)-dz];
   }
-  case "smile":return [Math.sign(x)*.045*mouth,.075*mouth*Math.min(1,Math.abs(x)/.17),.012*mouth];
-  case "frown":return [0,-.055*mouth*Math.min(1,Math.abs(x)/.17),0];
-  case "pucker":return [-x*.22*mouth,0,.075*mouth];
-  case "wide":return [x*.22*mouth,-.014*mouth,0];
+  case "smile":{
+   const cheek=(g(x-.38,.15)+g(x+.38,.15))*g(y+.31,.16)*front;
+   // Pull corners outward/up and carry the lip body smoothly, preserving the central cupid's bow.
+   const lift=.042*(1-Math.exp(-.5*(x/.17)**2))*lip;
+   return [.045*Math.tanh(x/.20)*lip+.008*Math.tanh(x/.3)*cheek,lift+.012*cheek,-.010*corner];
+  }
+  case "frown":{
+   // Serious = gently pressed lips, attentive eyelids and subtly lowered inner brows, rather than sadness.
+   const eyes=(g(x-.295,.12)+g(x+.295,.12))*g(y-.10,.095)*smooth(.55,.68,z)*(1-smooth(.86,.98,z));
+   const brows=(g(x-.27,.16)+g(x+.27,.16))*g(y-.32,.105)*front;
+   return [-.008*Math.tanh(x/.20)*brows,(-.545-y)*.14*lip-.006*corner+(.10-y)*.16*eyes-.020*brows,-.008*lip];
+  }
+  case "pucker":return [-x*.14*lip,(-.545-y)*.04*lip,.045*lip];
+  case "wide":return [.040*Math.tanh(x/.20)*lip,-.004*lip,0];
   case "blinkLeft":case "blinkRight":{
    const center=channel==="blinkLeft"?.295:-.295;
    const mask=g(x-center,.11)*g(y-.10,.105)*smooth(.55,.67,z)*(1-smooth(.84,.96,z));
