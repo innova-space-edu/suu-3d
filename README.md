@@ -41,7 +41,9 @@ Consulta [Voces y proveedores](docs/VOICE_PROVIDERS.md) y [.env.example](.env.ex
 
 ## Modo Expo Ciencias 2026
 
-Inicia sesión y abre **Modo feria**. Cada apertura muestra una ventana con los pasos. Si hay recorridos guardados, puedes usar esa configuración sin enseñarlos de nuevo o elegir **Enseñar recorridos de nuevo** si cambiaste el lugar o la cámara. No se activa ningún dispositivo al abrirlo.
+Inicia sesión y abre **Modo feria**. El mismo botón ofrece **Bienvenida** (recepción con cámara y recorridos) y **Normal · preguntas y guía** (conversación sobre las exposiciones y otras consultas, sin cámara, recorridos ni saludos automáticos). En Normal, pulsa el micrófono para empezar; abrirlo no activa dispositivos. **Cambiar modo de feria** permite volver a elegir y detiene los dispositivos de la modalidad anterior.
+
+Al elegir Bienvenida, cada apertura muestra una ventana con los pasos. Si hay recorridos guardados, puedes usar esa configuración sin enseñarlos de nuevo o elegir **Enseñar recorridos de nuevo** si cambiaste el lugar o la cámara. No se activa ningún dispositivo al abrirlo.
 
 1. Coloca el PC y la cámara en el acceso definitivo y activa la cámara de prueba.
 2. Con una sola persona visible, pulsa **Enseñar entrada** y recorre el acceso durante seis segundos. Repite con **Enseñar salida** en sentido contrario.
