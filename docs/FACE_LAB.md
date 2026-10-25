@@ -54,3 +54,10 @@ Replace the smile's discontinuous midline pull and steep V-shaped lift with a sm
 `/api/voice` accepts an optional `timings:true` request and returns base64 audio plus Edge TTS word windows in seconds. The original binary audio contract is preserved when this option is absent. The browser builds letter-derived A/E/I/O/U, M/P/B closure and consonant cues inside those measured word windows, sampled from `audio.currentTime`; pauses, seeks and playback rate therefore follow the player clock. This is word-aligned, orthographic estimation, not measured phoneme alignment.
 
 Voices without alignment use a duration-scaled estimate; browser synthesis uses word boundary events where supported with a text-duration fallback. LiveKit continues to use amplitude because its remote text/audio alignment is unavailable. Lip channels settle faster than brow/cheek channels, with fast closure and a return to rest in gaps. Longer words add a small brow emphasis. Stop and unmount clear cue sources; canceled synthesis responses cannot restart old speech. Six lab presets let users compare vowel shapes and M/P/B closure, without dental geometry.
+
+
+## V5.4 — clearer articulation and attention-only camera
+
+Increase jaw opening and vowel targets, with quicker lip transitions and preserved M/P/B closure. Add four eye-direction morph targets: the eyeball spheres rotate rigidly so their iris colors turn, while the skin remains fixed. The camera now emits only a smoothed face-position attention vector; it no longer predicts or copies expressions, jaw opening, blink, head tilt or head orientation. SUU uses that position for eye direction and a restrained attention turn. Its own speech and blinking remain autonomous.
+
+The spoken form of the standalone name SUU is normalized to “Súu” for server voices and browser speech, leaving visible chat text untouched. This avoids acronym-style spelling and requests emphasis on the u through ordinary text; exact vowel duration still depends on the selected voice. No dental geometry is added.

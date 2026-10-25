@@ -1,11 +1,21 @@
 import * as THREE from "three";
-export const FACE_CHANNELS=["jaw","smile","frown","pucker","wide","blinkLeft","blinkRight","browUp","browDown"] as const;
+export const FACE_CHANNELS=["jaw","smile","frown","pucker","wide","blinkLeft","blinkRight","browUp","browDown","lookLeft","lookRight","lookUp","lookDown"] as const;
 export type FaceChannel=typeof FACE_CHANNELS[number];
 export type FacePose=Partial<Record<FaceChannel,number>>;
 const smooth=(a:number,b:number,x:number)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t)};
 const g=(v:number,s:number)=>Math.exp(-.5*(v/s)**2);
 /** Small, bounded anatomical displacements on the approved neutral mesh. Eyes stay rigid. */
 export function facialDelta(channel:FaceChannel,x:number,y:number,z:number,eyeball=false):[number,number,number]{
+ if(channel.startsWith("look")){
+  if(!eyeball)return [0,0,0];
+  const cx=x>=0?.29544:-.29544,cy=.099984,cz=.686736,dx=x-cx,dy=y-cy,dz=z-cz;
+  if(channel==="lookLeft"||channel==="lookRight"){
+   const a=channel==="lookLeft"?-.28:.28;
+   return [dx*Math.cos(a)+dz*Math.sin(a)-dx,0,-dx*Math.sin(a)+dz*Math.cos(a)-dz];
+  }
+  const a=channel==="lookUp"?-.20:.20;
+  return [0,dy*Math.cos(a)-dz*Math.sin(a)-dy,dy*Math.sin(a)+dz*Math.cos(a)-dz];
+ }
  if(eyeball)return [0,0,0];
  const front=smooth(.48,.82,z),ax=Math.abs(x);
  // Flat support over the lip body, smooth falloff into cheeks. No sign(x) seam at the midline.
@@ -16,7 +26,7 @@ export function facialDelta(channel:FaceChannel,x:number,y:number,z:number,eyeba
    // Narrow transition at the lip seam; broader transition into each cheek, avoiding a horizontal crease.
    const seam=-.548+.030*Math.min(1,(x/.25)**2),width=.018+.15*smooth(.19,.48,ax);
    const lower=(1-smooth(seam-width,seam+width,y))*smooth(-1.22,-.86,y)*(1-smooth(.48,.78,ax))*smooth(.12,.65,z);
-   const a=.18*lower,dy=y+.25,dz=z-.38;
+   const a=.22*lower,dy=y+.25,dz=z-.38;
    return [0,dy*Math.cos(a)-dz*Math.sin(a)-dy,dy*Math.sin(a)+dz*Math.cos(a)-dz];
   }
   case "smile":{
@@ -43,6 +53,7 @@ export function facialDelta(channel:FaceChannel,x:number,y:number,z:number,eyeba
    return [0,(channel==="browUp"?.055:-.035)*mask,0];
   }
  }
+ return [0,0,0];
 }
 export function addFaceRig(surface:THREE.BufferGeometry){
  const position=surface.getAttribute("position"),normal=surface.getAttribute("normal");

@@ -1,5 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
+import {useMicrophoneInput} from "@/hooks/useMicrophoneInput";
+import {spokenText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import dynamic from "next/dynamic";
@@ -8,13 +10,14 @@ import type {ChatMessage,Domain} from "@/lib/providers";
 import type {FaceMotion} from "@/hooks/useSuuFaceTracking";
 const Avatar=dynamic(()=>import("./SuuAvatar"),{ssr:false});
 type SpeechResult={results:Record<number,Record<number,{transcript:string}>>};
-type Recognition={lang:string;continuous:boolean;interimResults:boolean;onresult:((event:SpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;start():void;stop():void};
+type Recognition={lang:string;continuous:boolean;interimResults:boolean;onresult:((event:SpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;start(track?:MediaStreamTrack):void;stop():void};
 type RecognitionConstructor=new()=>Recognition;
-type Props={onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];domain:Domain;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive:boolean};
-export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,language,quality,solid,tracking,cameraActive}:Props){
+type Props={noiseReduction:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];domain:Domain;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive:boolean};
+export default function SuuVoiceMode({noiseReduction,onClose,onTurn,initial,domain,voiceId,language,quality,solid,tracking,cameraActive}:Props){
  const [phase,setPhase]=useState<"idle"|"listening"|"thinking"|"speaking"|"error">("idle");
  const [subtitle,setSubtitle]=useState("Activa el micrófono para conversar con SUU.");
  const [provider,setProvider]=useState(""),[muted,setMuted]=useState(false),[energy,setEnergy]=useState(.04);
+ const microphone=useMicrophoneInput();
  const meter=useSpeechMeter(setEnergy);
  const lips=useLipSync();
  const speechGeneration=useRef(0);
@@ -23,8 +26,8 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
  onTurnRef.current=onTurn;
  const setPhaseNow=(next:typeof phase)=>{phaseRef.current=next;setPhase(next)};
  const releaseAudio=useCallback(()=>{speechGeneration.current++;lips.stop();meter.stop();if(audio.current){audio.current.onended=null;audio.current.onerror=null;audio.current.pause();audio.current.src="";audio.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}if(timer.current){clearInterval(timer.current);timer.current=null}if(typeof window!=="undefined")window.speechSynthesis?.cancel();setEnergy(0)},[meter.stop,lips.stop]);
- const stop=useCallback(()=>{stopSignal.current=true;abort.current?.abort();abort.current=null;recognizer.current?.stop();recognizer.current=null;listeningRef.current=false;releaseAudio();setPhaseNow("idle");setSubtitle("Conversación pausada. Pulsa para reanudar.");},[releaseAudio]);
- useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();releaseAudio()},[releaseAudio]);
+ const stop=useCallback(()=>{stopSignal.current=true;abort.current?.abort();abort.current=null;recognizer.current?.stop();microphone.stop();recognizer.current=null;listeningRef.current=false;releaseAudio();setPhaseNow("idle");setSubtitle("Conversación pausada. Pulsa para reanudar.");},[releaseAudio,microphone.stop]);
+ useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();microphone.stop();releaseAudio()},[releaseAudio,microphone.stop]);
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
  const speak=async(text:string)=>{
   if(stopSignal.current)return;
@@ -45,7 +48,7 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
   }
   if(started||stopSignal.current)return;
   if(!("speechSynthesis" in window)){setPhaseNow("error");setSubtitle("No se encontró ningún sintetizador de voz.");return}
-  const words=new SpeechSynthesisUtterance(text.slice(0,2400));
+  const words=new SpeechSynthesisUtterance(spokenText(text.slice(0,2400)));
   words.lang=language;words.rate=1;const options=window.speechSynthesis.getVoices();
   words.voice=options.find(v=>voiceId==="browser:"+v.voiceURI)||options.find(v=>v.lang.toLowerCase()===language.toLowerCase())||null;
   words.onstart=()=>{let t=0;timer.current=setInterval(()=>{t+=.85;setEnergy(.15+.32*Math.abs(Math.sin(t)))},90)};
@@ -77,9 +80,9 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
   const r=new Constructor();recognizer.current=r;r.lang=language;r.continuous=false;r.interimResults=false;
   let transcript="",failed=false;
   r.onresult=e=>{transcript=e.results[0]?.[0]?.transcript?.trim()||"";if(transcript)setSubtitle("Tú: "+transcript)};
-  r.onerror=e=>{failed=true;listeningRef.current=false;if(stopSignal.current)return;setPhaseNow("error");setSubtitle(e.error==="not-allowed"?"Habilita el micrófono en los permisos del navegador.":"No se reconoció la voz. Pulsa para intentarlo de nuevo.")};
-  r.onend=()=>{listeningRef.current=false;if(stopSignal.current||failed)return;if(transcript)void converse(transcript);else {setPhaseNow("idle");restart()}};
-  try{r.start();listeningRef.current=true;setPhaseNow("listening");setSubtitle("Escuchando... habla con naturalidad.");}catch{listeningRef.current=false;setPhaseNow("error");setSubtitle("No se pudo iniciar el micrófono.")}
+  r.onerror=e=>{microphone.stop();failed=true;listeningRef.current=false;if(stopSignal.current)return;setPhaseNow("error");setSubtitle(e.error==="not-allowed"?"Habilita el micrófono en los permisos del navegador.":"No se reconoció la voz. Pulsa para intentarlo de nuevo.")};
+  r.onend=()=>{microphone.stop();listeningRef.current=false;if(stopSignal.current||failed)return;if(transcript)void converse(transcript);else {setPhaseNow("idle");restart()}};
+  try{listeningRef.current=true;setPhaseNow("listening");setSubtitle("Preparando micrófono...");if(!await microphone.start(r,noiseReduction)){listeningRef.current=false;return}if(stopSignal.current){microphone.stop();listeningRef.current=false;return}setSubtitle("Escuchando... habla con naturalidad.");}catch{listeningRef.current=false;setPhaseNow("error");setSubtitle("No se pudo iniciar el micrófono.")}
  }
  const toggle=()=>{if(phaseRef.current!=="idle"&&phaseRef.current!=="error"){stop();return}stopSignal.current=false;void listen()};
  return <div className="voiceOnlyOverlay" role="dialog" aria-label="Modo conversación de voz con SUU" aria-modal="true">
@@ -88,7 +91,7 @@ export default function SuuVoiceMode({onClose,onTurn,initial,domain,voiceId,lang
   <div className="voiceBottom"><div className={"voiceStatus "+phase}><AudioLines size={19}/><span>{phase==="listening"?"ESCUCHANDO":phase==="thinking"?"PENSANDO":phase==="speaking"?"HABLANDO":phase==="error"?"REINTENTAR":"EN ESPERA"}</span></div>
    <p aria-live="polite">{subtitle}</p>
    <div className="voiceControls"><button className="voiceRound" onClick={toggle} title={phase==="idle"||phase==="error"?"Iniciar voz":"Pausar voz"}>{phase==="idle"||phase==="error"?<Mic size={27}/>:<MicOff size={27}/>}</button><button className="voiceSmall" onClick={()=>setMuted(v=>!v)} title={muted?"Activar audio":"Silenciar audio"}>{muted?<VolumeX size={20}/>:<Volume2 size={20}/>}</button><button className="voiceSmall" onClick={()=>{stop();onClose()}}>Salir</button></div>
-   <small>La escucha se reanuda automáticamente cuando SUU termina de responder. El micrófono se detiene al cerrar o pausar.</small>
+   <small>{phase==="listening"&&(microphone.mode==="standard"?"Reducción estándar activa. ":"Entrada gestionada por el navegador. ")}La escucha se reanuda automáticamente cuando SUU termina de responder. El micrófono se detiene al cerrar o pausar.</small>
   </div>
  </div>;
 }

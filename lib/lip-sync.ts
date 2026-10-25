@@ -1,7 +1,7 @@
 import type {FacePose} from "./face-rig";
 export type SpeechWord={text:string;start:number;end:number};
 export type LipCue={start:number;end:number;shape:string;pose:FacePose};
-export const VISEMES:Record<string,FacePose>={A:{jaw:.55,wide:.08},E:{jaw:.25,wide:.43},I:{jaw:.14,wide:.56},O:{jaw:.35,pucker:.60},U:{jaw:.17,pucker:.78},MBP:{jaw:0,pucker:0,wide:0},FV:{jaw:.09,wide:.13},C:{jaw:.15,wide:.06},REST:{jaw:0,pucker:0,wide:0}};
+export const VISEMES:Record<string,FacePose>={A:{jaw:.85,wide:.08},E:{jaw:.48,wide:.43},I:{jaw:.30,wide:.56},O:{jaw:.65,pucker:.60},U:{jaw:.40,pucker:.78},MBP:{jaw:0,pucker:0,wide:0},FV:{jaw:.17,wide:.13},C:{jaw:.26,wide:.06},REST:{jaw:0,pucker:0,wide:0}};
 export function wordTimings(raw:{text:string;offset:number;duration:number}[]):SpeechWord[]{
  return raw.filter(w=>w.text&&Number.isFinite(w.offset)&&Number.isFinite(w.duration)&&w.offset>=0&&w.duration>0).slice(0,1200).map(w=>({text:w.text,start:w.offset/1e7,end:(w.offset+w.duration)/1e7})).sort((a,b)=>a.start-b.start);
 }
