@@ -1,6 +1,25 @@
+/** Small, explicit lexicon for Spanish TTS; never changes English-language playback. */
+const ENGLISH_PRONUNCIATIONS:Record<string,string>={
+ "innova space education":"Innova Spéis Edyukéishon",
+ "innova space":"Innova Spéis",
+ "scientificbrain":"Saiéntifik Bréin",
+ "openrouter":"Óupen Ráuter",
+ "deepseek":"Díp Sík",
+ "livekit":"Láiv Kit",
+ "github":"Guít Jab",
+ "software":"sóftuer",
+ "hardware":"járduer",
+ "wi-fi":"uái fái",
+};
+const pronunciationPattern=new RegExp("(?<![\\p{L}\\p{N}_/@.])(?:"+Object.keys(ENGLISH_PRONUNCIATIONS).sort((a,b)=>b.length-a.length).map(key=>key.replace(/ /g,"\\s+")).join("|")+")(?![\\p{L}\\p{N}_]|\\.[\\p{L}\\p{N}])","giu");
+export function englishPronunciation(text:string,locale:string){
+ if(!/^es(?:-|$)/i.test(locale))return text;
+ return text.replace(pronunciationPattern,term=>ENGLISH_PRONUNCIATIONS[term.toLowerCase().replace(/\s+/g," ")]||term);
+}
+
 /** Plain spoken content. Visible chat text is never changed by this function. */
-export function spokenText(text:string){
- return text
+export function spokenText(text:string,locale="es-CL"){
+ const cleaned=text
   .replace(/\r\n?/g,"\n")
   .replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]*\1[ \t]*$/gm,"Fragmento de código disponible en el chat.")
   .replace(/^[ \t]{0,3}\[[^\]]+\]:[ \t]+\S+.*$/gm,"")
@@ -24,4 +43,5 @@ export function spokenText(text:string){
   .replace(/\\([*_`~#[\]()>])/g,"$1")
   .replace(/\bSUU\b/gi,"Súu")
   .replace(/[ \t]+/g," ").replace(/[ \t]*\n[ \t]*/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+ return englishPronunciation(cleaned,locale);
 }

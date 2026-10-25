@@ -34,14 +34,14 @@ export default function SuuVoiceMode({fairMode=false,enabled,announcement,onAnno
  const finishSpeech=(success=true)=>{releaseAudio();if(announcing.current){announcing.current=false;endRef.current?.(success)}setPhaseNow("idle");restart()};
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
  const speak=async(text:string)=>{
-  const displayText=text;text=spokenText(text);
+  const displayText=text;const speechLocale=(voiceId.startsWith("browser:")?window.speechSynthesis?.getVoices().find(v=>"browser:"+v.voiceURI===voiceId)?.lang:voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0])||language;text=spokenText(text,speechLocale);
   if(stopSignal.current)return;
   if(!text){finishSpeech();return}
   if(muted){finishSpeech(false);return}
   releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(displayText);let started=false;
   if(!voiceId.startsWith("browser:")){
    try{
-    const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId,timings:true}),signal:abort.current?.signal});
+    const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId,language:speechLocale,timings:true}),signal:abort.current?.signal});
     if(!res.ok)throw new Error("No hay motor de voz en línea");
     const {blob,words}=await readVoiceResponse(res);
     if(stopSignal.current||ticket!==speechGeneration.current)return;
@@ -55,9 +55,9 @@ export default function SuuVoiceMode({fairMode=false,enabled,announcement,onAnno
   if(started||stopSignal.current)return;
   if(!("speechSynthesis" in window)){setPhaseNow("error");setSubtitle("No se encontró ningún sintetizador de voz.");if(announcing.current){announcing.current=false;endRef.current?.(false)}return}
   const browserTicket=speechGeneration.current;
-  const words=new SpeechSynthesisUtterance(spokenText(text.slice(0,2400)));
-  words.lang=language;words.rate=1;const options=window.speechSynthesis.getVoices();
-  words.voice=options.find(v=>voiceId==="browser:"+v.voiceURI)||options.find(v=>v.lang.toLowerCase()===language.toLowerCase())||null;
+  const words=new SpeechSynthesisUtterance(spokenText(text.slice(0,2400),speechLocale));
+  words.lang=speechLocale;words.rate=1;const options=window.speechSynthesis.getVoices();
+  words.voice=options.find(v=>voiceId==="browser:"+v.voiceURI)||options.find(v=>v.lang.toLowerCase()===speechLocale.toLowerCase())||null;
   words.onstart=()=>{if(browserTicket!==speechGeneration.current||stopSignal.current)return;let t=0;timer.current=setInterval(()=>{t+=.85;setEnergy(.15+.32*Math.abs(Math.sin(t)))},90)};
   words.onend=()=>{if(browserTicket===speechGeneration.current&&!stopSignal.current)finishSpeech()};
   words.onerror=()=>{if(browserTicket===speechGeneration.current&&!stopSignal.current)finishSpeech(false)};
