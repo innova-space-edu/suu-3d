@@ -1,6 +1,6 @@
 export type FairAnnouncement = "welcome" | "goodbye";
 export const FAIR_SCRIPTS: Record<FairAnnouncement, string> = {
-  welcome: "Bienvenidos a la Expo Ciencias 2026. Aquí podrán encontrar exposiciones de los trabajos de sus compañeros, desde educación básica a media.",
+  welcome: "¡Bienvenidos a la Expo Ciencias 2026! Soy SUU, su guía. Aquí encontrarán trabajos de estudiantes de educación básica y media sobre salud y bienestar, reciclaje, cuidado del medioambiente, energías renovables, astronomía y tecnología. Podrán conocer una maqueta de colegio sustentable con energía solar, el museo virtual Museo Vivo y exposiciones sobre telescopios y el universo. Si tienen preguntas, pueden conversar conmigo. ¡Disfruten el recorrido!",
   goodbye: "Hasta luego. Espero que hayan disfrutado de esta exposición de ciencias y tecnología.",
 };
 
