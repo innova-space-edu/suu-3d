@@ -41,11 +41,11 @@ Consulta [Voces y proveedores](docs/VOICE_PROVIDERS.md) y [.env.example](.env.ex
 
 ## Modo Expo Ciencias 2026
 
-Inicia sesión y abre **Modo feria**. No se activa ningún dispositivo al abrirlo.
+Inicia sesión y abre **Modo feria**. Cada apertura muestra una ventana con los pasos. Si hay recorridos guardados, puedes usar esa configuración sin enseñarlos de nuevo o elegir **Enseñar recorridos de nuevo** si cambiaste el lugar o la cámara. No se activa ningún dispositivo al abrirlo.
 
 1. Coloca el PC y la cámara en el acceso definitivo y activa la cámara de prueba.
 2. Con una sola persona visible, pulsa **Enseñar entrada** y recorre el acceso durante seis segundos. Repite con **Enseñar salida** en sentido contrario.
-3. Haz ambos recorridos otra vez sin voz. Comprueba que las etiquetas de entrada y salida sean correctas antes de activar la feria con audio.
+3. Para recorridos nuevos, haz ambos otra vez sin voz. Comprueba las etiquetas de entrada y salida. Si elegiste usar la configuración guardada en el mismo lugar, puedes activar la feria sin repetir la enseñanza.
 4. **Activar feria con audio** inicia la escucha de preguntas y los saludos automáticos. **Detener feria y dispositivos** libera cámara y micrófono.
 
 SUU termina una bienvenida completa por grupo. No acumula mensajes por estudiante. Si continúan entrando personas después de terminar, vuelve a saludar tras una pausa breve. Las entradas tienen prioridad sobre salidas simultáneas; los mensajes caducan mientras SUU responde preguntas. El micrófono se suspende durante la voz de SUU y vuelve a escuchar después.
@@ -55,3 +55,5 @@ La calibración guarda únicamente eje, dirección y rango geométrico en este n
 La dirección se estima por movimiento de cuerpos y tamaño aparente, sin identificar personas. No se interpreta la ausencia de un rostro como una salida. Las oclusiones, grupos densos y recorridos que no se distinguen desde la cámara pueden producir errores; es necesaria una prueba en el lugar antes del uso público. No sirve como contador de asistencia. La prueba automatizada de navegador usa detecciones y audio simulados, no valida una multitud real.
 
 El modo guía utiliza quince fichas resumidas de los afiches aportados, sin publicar los documentos originales ni identidades de estudiantes. Omite plantillas vacías y agrupa versiones repetidas. No inventa autores ni puestos; cuando se pregunta por autoría, indica que no consta en el catálogo. Las preguntas ajenas a la feria siguen permitidas. Reutiliza las voces y proveedores existentes: no requiere nuevas variables de Vercel. Requiere cámara, micrófono y reconocimiento de voz compatible (Chrome o Edge).
+
+El botón **Pantalla completa** amplía únicamente el cuadro de visualización (rostro, encabezado y controles), sin navegación, chat ni pie de página. Escape o el mismo control permite volver.
