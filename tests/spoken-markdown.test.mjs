@@ -19,3 +19,16 @@ test('cleanup is idempotent and handles orphan bold from truncated replies',()=>
  const clean=spokenText(text);assert.ok(!clean.includes('*'));assert.equal(spokenText(clean),clean);
  assert.equal(spokenText('***\n---'),'');
 });
+
+test('Spanish voices pronounce the organization name and explicit English technology terms',()=>{
+ assert.equal(spokenText('Soy SUU, de Innova Space Education. Usamos OpenRouter y DeepSeek.'),'Soy Súu, de Innova Spéis Edyukéishon. Usamos Óupen Ráuter y Díp Sík.');
+ assert.equal(spokenText('INNOVA   SPACE EDUCATION, ScientificBrain y LiveKit.'),'Innova Spéis Edyukéishon, Saiantífik Bréin y Láiv Kit.');
+});
+test('pronunciation changes are idempotent and do not rewrite English voices, identifiers or domains',()=>{
+ const original='Welcome to Innova Space Education. OpenRouter software.';
+ assert.equal(spokenText(original,'en-US'),original);
+ assert.equal(spokenText(original,'pt-BR'),original);
+ const spanish=spokenText(original,'es-CL');assert.equal(spokenText(spanish,'es-CL'),spanish);
+ assert.equal(spokenText('https://github.com SUU_GITHUB_API myOpenRouter github.com'),'https://github.com SUU_GITHUB_API myOpenRouter github.com');
+ assert.equal(original,'Welcome to Innova Space Education. OpenRouter software.');
+});
