@@ -75,3 +75,8 @@ La opción “Reducir ruido de fondo” está activada de inicio y se aplica al 
 Chrome/Edge de escritorio 135+ reciben la pista capturada en `SpeechRecognition.start(track)`. En móviles, Safari y otros navegadores no compatibles se conserva el reconocimiento nativo y la interfaz indica que la entrada la gestiona el navegador; no se anuncia un filtro verificado allí. LiveKit recibe las mismas opciones al conectar el micrófono. Detener, cerrar o cancelar una captura pendiente libera sus pistas. Cambiar la preferencia se aplica en la próxima activación.
 
 Referencia: https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/start y https://docs.livekit.io/reference/client-sdk-js/interfaces/AudioCaptureOptions.html .
+
+
+## Texto para lectura en voz alta
+
+La voz recibe una versión sin marcas de Markdown: negritas, cursivas, títulos, viñetas, enlaces, tablas y adornos no se leen como símbolos de formato. Los bloques de código se anuncian como disponibles en el chat, evitando narrar su puntuación. El chat conserva su texto original. Números, porcentajes y operadores relevantes no se borran indiscriminadamente. La limpieza se aplica antes de sintetizar en Edge/ElevenLabs y en la voz del navegador, y el texto limpio también alimenta la sincronización labial de respaldo.

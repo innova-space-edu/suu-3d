@@ -38,6 +38,7 @@ export async function POST(req:NextRequest){
  if(!text||text.length>2000)return NextResponse.json({error:"Texto inválido"},{status:400});
  if(!knownVoice(voiceId)&&voiceId!=="elevenlabs:default")return NextResponse.json({error:"Voz no permitida"},{status:400});
  text=spokenText(text);
+ if(!text)return NextResponse.json({error:"El texto no contiene contenido para leer"},{status:400});
  const pipeline=voiceId==="elevenlabs:default"?["premium","edge"] as const:["edge","premium"] as const;
  for(const provider of pipeline){
   try{
