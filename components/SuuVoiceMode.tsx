@@ -30,9 +30,11 @@ export default function SuuVoiceMode({noiseReduction,onClose,onTurn,initial,doma
  useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();microphone.stop();releaseAudio()},[releaseAudio,microphone.stop]);
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
  const speak=async(text:string)=>{
+  const displayText=text;text=spokenText(text);
   if(stopSignal.current)return;
+  if(!text){releaseAudio();setPhaseNow("idle");restart();return}
   if(muted){setPhaseNow("idle");restart();return}
-  releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(text);let started=false;
+  releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(displayText);let started=false;
   if(!voiceId.startsWith("browser:")){
    try{
     const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId,timings:true}),signal:abort.current?.signal});
