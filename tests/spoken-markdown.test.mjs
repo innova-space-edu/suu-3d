@@ -22,7 +22,7 @@ test('cleanup is idempotent and handles orphan bold from truncated replies',()=>
 
 test('Spanish voices pronounce the organization name and explicit English technology terms',()=>{
  assert.equal(spokenText('Soy SUU, de Innova Space Education. Usamos OpenRouter y DeepSeek.'),'Soy Súu, de Innova Spéis Edyukéishon. Usamos Óupen Ráuter y Díp Sík.');
- assert.equal(spokenText('INNOVA   SPACE EDUCATION, ScientificBrain y LiveKit.'),'Innova Spéis Edyukéishon, Saiéntifik Bréin y Láiv Kit.');
+ assert.equal(spokenText('INNOVA   SPACE EDUCATION, ScientificBrain y LiveKit.'),'Innova Spéis Edyukéishon, Saiantífik Bréin y Láiv Kit.');
 });
 test('pronunciation changes are idempotent and do not rewrite English voices, identifiers or domains',()=>{
  const original='Welcome to Innova Space Education. OpenRouter software.';

@@ -2,7 +2,7 @@
 const ENGLISH_PRONUNCIATIONS:Record<string,string>={
  "innova space education":"Innova Spéis Edyukéishon",
  "innova space":"Innova Spéis",
- "scientificbrain":"Saiéntifik Bréin",
+ "scientificbrain":"Saiantífik Bréin",
  "openrouter":"Óupen Ráuter",
  "deepseek":"Díp Sík",
  "livekit":"Láiv Kit",
