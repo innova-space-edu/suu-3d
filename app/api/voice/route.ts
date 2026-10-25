@@ -2,6 +2,7 @@ import {NextRequest,NextResponse} from "next/server";
 import {EdgeTTS,Constants} from "@andresaya/edge-tts";
 import {authorized,originAllowed,throttle,clientIdentity} from "@/lib/security";
 import {DEFAULT_VOICE_ID,knownVoice,voiceCatalog} from "@/lib/voice-catalog";
+import {spokenText} from "@/lib/speech-text";
 import {wordTimings} from "@/lib/lip-sync";
 export const runtime="nodejs";export const maxDuration=60;
 export async function GET(){
@@ -36,6 +37,7 @@ export async function POST(req:NextRequest){
  try{const b=await req.json();timings=b.timings===true;text=typeof b.text==="string"?b.text.trim():"";voiceId=typeof b.voiceId==="string"?b.voiceId:DEFAULT_VOICE_ID}catch{}
  if(!text||text.length>2000)return NextResponse.json({error:"Texto inválido"},{status:400});
  if(!knownVoice(voiceId)&&voiceId!=="elevenlabs:default")return NextResponse.json({error:"Voz no permitida"},{status:400});
+ text=spokenText(text);
  const pipeline=voiceId==="elevenlabs:default"?["premium","edge"] as const:["edge","premium"] as const;
  for(const provider of pipeline){
   try{

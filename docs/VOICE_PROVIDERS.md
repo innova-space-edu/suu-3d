@@ -66,3 +66,12 @@ El panel distingue configuración de disponibilidad: una clave guardada no demue
 LiveKit es independiente de estas cuatro IA y requiere su propio agente externo. Antes de entregar un token, el servidor hace una consulta de salas de solo lectura para validar las credenciales. La URL, API key y secret deben ser del mismo proyecto. La cámara está permitida para el propio sitio y solo se activa con el botón del usuario.
 
 V5 tiene movimiento de cabeza más visible y seguimiento de orientación cuando se detecta una cara. No tiene aún rig de labios, párpados ni expresiones.
+
+
+## Reducción de ruido del micrófono
+
+La opción “Reducir ruido de fondo” está activada de inicio y se aplica al pulsar el micrófono, no al abrir la página. Usa `noiseSuppression:true` y cancelación de eco, con `autoGainControl:false` y `voiceIsolation:false`; no añade una puerta de ruido ni un aislador neuronal. No separa varias personas hablando ni permite elegir una intensidad exacta: el algoritmo lo controla el navegador. Si afecta voces suaves, puede desactivarse.
+
+Chrome/Edge de escritorio 135+ reciben la pista capturada en `SpeechRecognition.start(track)`. En móviles, Safari y otros navegadores no compatibles se conserva el reconocimiento nativo y la interfaz indica que la entrada la gestiona el navegador; no se anuncia un filtro verificado allí. LiveKit recibe las mismas opciones al conectar el micrófono. Detener, cerrar o cancelar una captura pendiente libera sus pistas. Cambiar la preferencia se aplica en la próxima activación.
+
+Referencia: https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/start y https://docs.livekit.io/reference/client-sdk-js/interfaces/AudioCaptureOptions.html .

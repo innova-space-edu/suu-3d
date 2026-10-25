@@ -19,11 +19,11 @@ function Scene({lipSync,speaking,listening,energy,quality,solid,tracking,cameraA
  useFrame(({clock,pointer},dt)=>{
   if(!head.current)return;
   const time=clock.elapsedTime;
-  const yaw=cameraActive&&tracking?tracking.yaw*.85:pointer.x*.26+.12+Math.sin(time*.45)*.07;
-  const pitch=cameraActive&&tracking?-tracking.pitch*.55:-pointer.y*.12+Math.sin(time*.65)*.025+(speaking?Math.sin(time*2.8)*.025:0);
+  const yaw=cameraActive&&tracking?tracking.gazeX*.20:pointer.x*.26+.12+Math.sin(time*.45)*.07;
+  const pitch=cameraActive&&tracking?-tracking.gazeY*.12:-pointer.y*.12+Math.sin(time*.65)*.025+(speaking?Math.sin(time*2.8)*.025:0);
   head.current.rotation.y=THREE.MathUtils.damp(head.current.rotation.y,yaw,5,dt);
   head.current.rotation.x=THREE.MathUtils.damp(head.current.rotation.x,pitch,5,dt);
-  head.current.rotation.z=THREE.MathUtils.damp(head.current.rotation.z,cameraActive?(tracking?.roll||0)*-.35:Math.sin(time*.38)*.018,5,dt);
+  head.current.rotation.z=THREE.MathUtils.damp(head.current.rotation.z,Math.sin(time*.38)*.018,5,dt);
   head.current.position.y=Math.sin(clock.elapsedTime*.8)*.008+(listening?.008:0);
  });
  const brightness=1+(speaking?Math.min(1,Math.max(0,energy))*.18:listening?.04:0);
@@ -33,7 +33,7 @@ function Scene({lipSync,speaking,listening,energy,quality,solid,tracking,cameraA
   <directionalLight position={[1,3,4]} intensity={1.8*brightness}/>
   <directionalLight position={[-3,1,3]} intensity={.75*brightness}/>
   <group ref={head}>
-   <AnatomicalHead lipSync={lipSync} speaking={speaking} listening={listening} energy={energy} tracking={cameraActive?tracking:undefined} manageCamera={false} viewRevision={0} view="frente" count={quality==="high"?100000:25000} mode={solid?"superficie":"contornos"} size={1} brightness={brightness} contrast={.72} onProgress={onProgress} onError={onError}/>
+   <AnatomicalHead lipSync={lipSync} speaking={speaking} listening={listening} energy={energy} gaze={cameraActive&&tracking?{x:tracking.gazeX,y:tracking.gazeY}:undefined} manageCamera={false} viewRevision={0} view="frente" count={quality==="high"?100000:25000} mode={solid?"superficie":"contornos"} size={1} brightness={brightness} contrast={.72} onProgress={onProgress} onError={onError}/>
   </group>
   <OrbitControls target={[0,-.15,0]} enablePan={false} enableDamping minDistance={3.1} maxDistance={14}/>
  </>;

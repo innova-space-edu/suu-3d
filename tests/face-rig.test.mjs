@@ -9,12 +9,12 @@ const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext
 const {facialDelta,poseWeights,FACE_CHANNELS}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 test('facial targets stay finite, bounded and keep rigid eyeballs unchanged',()=>{
  for(const k of FACE_CHANNELS){
-  assert.deepEqual(facialDelta(k,.3,.1,.8,true),[0,0,0]);
+  if(!k.startsWith('look'))assert.deepEqual(facialDelta(k,.3,.1,.8,true),[0,0,0]);
   for(let x=-1;x<=1;x+=.2)for(let y=-1.3;y<=1.3;y+=.2){const d=facialDelta(k,x,y,.9);assert.ok(d.every(Number.isFinite));assert.ok(Math.hypot(...d)<.4)}
  }
  assert.ok(facialDelta('jaw',0,-.62,1)[1]<-.05);
  assert.ok(facialDelta('pucker',.1,-.54,1)[2]>.03);
- assert.deepEqual(poseWeights({}),new Array(9).fill(0));
+ assert.deepEqual(poseWeights({}),new Array(FACE_CHANNELS.length).fill(0));
  assert.equal(poseWeights({jaw:Infinity,smile:2})[0],0);assert.equal(poseWeights({smile:2})[1],1);
 });
 test('particle target displacement uses exactly its source triangle interpolation',()=>{
@@ -35,4 +35,12 @@ test('smile is continuous at the lip midline and serious engages eyelids and bro
  assert.ok(facialDelta('frown',.27,.32,.92)[1]<-.01,'brow lowers');
  assert.ok(facialDelta('frown',.295,.16,.79)[1]<-.004,'upper lid narrows');
  assert.ok(facialDelta('frown',.295,.04,.79)[1]>0,'lower lid rises');
+});
+
+test('attention rotates eyeballs around their center while skin stays fixed',()=>{
+ for(const k of ['lookLeft','lookRight','lookUp','lookDown']){
+  assert.deepEqual(facialDelta(k,.3,.1,.8,false),[0,0,0]);
+  const p=[.29544,.099984,.826736],d=facialDelta(k,...p,true);
+  assert.ok(Math.abs(Math.hypot(p[0]+d[0]-.29544,p[1]+d[1]-.099984,p[2]+d[2]-.686736)-.14)<1e-6);
+ }
 });

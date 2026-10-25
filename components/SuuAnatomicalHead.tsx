@@ -4,32 +4,33 @@ import {Component,useEffect,useRef,useState,type ReactNode} from "react";
 import * as THREE from "three";
 import {loadFaceGeometry,type FaceGeometryBundle,type FaceView,type PointCount,type CleanMode} from "@/lib/face-v4-geometry";
 import {makeCleanPointMaterial} from "@/lib/face-point-shader";
-import {poseWeights,type FacePose} from "@/lib/face-rig";
-import type {FaceMotion} from "@/hooks/useSuuFaceTracking";
+import {FACE_CHANNELS,poseWeights,type FacePose} from "@/lib/face-rig";
 import {currentLipPose,type LipSignal} from "@/hooks/useLipSync";
-type Controls={lipSync?:LipSignal;demoSpeech?:boolean;pose?:FacePose;speaking?:boolean;listening?:boolean;energy?:number;tracking?:FaceMotion;autoBlink?:boolean;manageCamera?:boolean;viewRevision:number;view:FaceView;count:PointCount;mode:CleanMode;size:number;brightness:number;contrast:number;onProgress:(count:number)=>void;onError:(message:string)=>void};
+type Controls={lipSync?:LipSignal;demoSpeech?:boolean;pose?:FacePose;speaking?:boolean;listening?:boolean;energy?:number;gaze?:{x:number;y:number};autoBlink?:boolean;manageCamera?:boolean;viewRevision:number;view:FaceView;count:PointCount;mode:CleanMode;size:number;brightness:number;contrast:number;onProgress:(count:number)=>void;onError:(message:string)=>void};
 export class ViewerBoundary extends Component<{children:ReactNode},{failed:boolean}>{
  state={failed:false};
  static getDerivedStateFromError(){return {failed:true}}
  render(){return this.state.failed?<div className="labLoading labError" role="alert">No se pudo iniciar el visor 3D. Comprueba la aceleración gráfica y pulsa Reintentar.</div>:this.props.children}
 }
-export function AnatomicalHead({lipSync,demoSpeech=false,pose={},speaking=false,listening=false,energy=0,tracking,autoBlink=true,manageCamera=true,viewRevision,view,count,mode,size,brightness,contrast,onProgress,onError}:Controls){
+export function AnatomicalHead({lipSync,demoSpeech=false,pose={},speaking=false,listening=false,energy=0,gaze,autoBlink=true,manageCamera=true,viewRevision,view,count,mode,size,brightness,contrast,onProgress,onError}:Controls){
  const [geometry,setGeometry]=useState<FaceGeometryBundle|null>(null);
  const [received,setReceived]=useState(0);
  const root=useRef<THREE.Group>(null);
- const weights=useRef(new Array(9).fill(0));
+ const weights=useRef(new Array(FACE_CHANNELS.length).fill(0));
  useFrame(({clock},dt)=>{
   const t=clock.elapsedTime,phase=t%4.7;
   const blink=autoBlink&&phase>4.45?Math.sin((phase-4.45)/.25*Math.PI):0;
   const driven={...currentLipPose(lipSync),...pose};
   const target=poseWeights({...driven,
-   jaw:driven.jaw??(speaking?Math.min(.8,Math.max(0,demoSpeech?.08+.30*Math.abs(Math.sin(t*7))*Math.abs(Math.sin(t*1.9)):energy)*1.8):tracking?.mouth||0),
-   smile:driven.smile??tracking?.smile??(listening?.08:0),
-   blinkLeft:driven.blinkLeft??Math.max(blink,tracking?.blink||0),
-   blinkRight:driven.blinkRight??Math.max(blink,tracking?.blink||0),
-   browUp:driven.browUp??(listening?.12:0)});
+   jaw:driven.jaw??(speaking?Math.min(.85,Math.max(0,demoSpeech?.08+.30*Math.abs(Math.sin(t*7))*Math.abs(Math.sin(t*1.9)):energy)*2.2):0),
+   smile:driven.smile??(listening?.08:0),
+   blinkLeft:driven.blinkLeft??blink,
+   blinkRight:driven.blinkRight??blink,
+   browUp:driven.browUp??(listening?.12:0),
+   lookLeft:driven.lookLeft??Math.max(0,-(gaze?.x||0)),lookRight:driven.lookRight??Math.max(0,gaze?.x||0),
+   lookUp:driven.lookUp??Math.max(0,gaze?.y||0),lookDown:driven.lookDown??Math.max(0,-(gaze?.y||0))});
   for(let i=0;i<target.length;i++){
-   const speed=i===0?(target[i]<weights.current[i]?42:25):i===3||i===4?25:i===5||i===6?30:7;
+   const speed=i===0?(target[i]<weights.current[i]?45:38):i===3||i===4?35:i===5||i===6?30:7;
    weights.current[i]+=(target[i]-weights.current[i])*(1-Math.exp(-Math.min(dt,.1)*speed));
   }
   root.current?.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Points){if(o.morphTargetInfluences)for(let i=0;i<target.length;i++)o.morphTargetInfluences[i]=weights.current[i]}});

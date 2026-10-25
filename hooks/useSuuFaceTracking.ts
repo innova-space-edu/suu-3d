@@ -1,10 +1,10 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
+import {attentionTarget} from "@/lib/face-attention";
 import type {FaceLandmarker} from "@mediapipe/tasks-vision";
-export type FaceMotion={yaw:number;pitch:number;roll:number;gazeX:number;gazeY:number;blink:number;smile:number;mouth:number};
-export const NEUTRAL_FACE:FaceMotion={yaw:0,pitch:0,roll:0,gazeX:0,gazeY:0,blink:0,smile:0,mouth:0};
+export type FaceMotion={gazeX:number;gazeY:number};
+export const NEUTRAL_FACE:FaceMotion={gazeX:0,gazeY:0};
 export type TrackerState="off"|"loading"|"tracking"|"no-face"|"error";
-const clamp=(n:number,min=-1,max=1)=>Math.max(min,Math.min(max,n));
 /** Camera frames are processed in-memory on-device. No canvas preview or network upload. */
 export function useSuuFaceTracking(){
  const [status,setStatus]=useState<TrackerState>("off");
@@ -35,8 +35,8 @@ export function useSuuFaceTracking(){
    if(generation.current!==ticket){captured.getTracks().forEach(t=>t.stop());return}
    const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.1.1/wasm");
    const modelUrl="https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
-   try{localModel=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:modelUrl,delegate:"GPU"},runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:true})}
-   catch{localModel=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:modelUrl,delegate:"CPU"},runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:true})}
+   try{localModel=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:modelUrl,delegate:"GPU"},runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:false})}
+   catch{localModel=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:modelUrl,delegate:"CPU"},runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:false})}
    if(generation.current!==ticket){localModel.close();captured.getTracks().forEach(t=>t.stop());return}
    const element=document.createElement("video"); // not appended, never displayed
    element.autoplay=true;element.playsInline=true;element.muted=true;element.srcObject=captured;
@@ -53,19 +53,9 @@ export function useSuuFaceTracking(){
      if(!lm){if(wasFace.current){setMotion(NEUTRAL_FACE);wasFace.current=false;setStatus("no-face")}return}
      if(!wasFace.current){setStatus("tracking");wasFace.current=true}
      const point=(n:number)=>lm[n]||{x:.5,y:.5,z:0};
-     const [l,r,nose,chin,forehead]=[point(33),point(263),point(1),point(152),point(10)];
-     const centerX=(l.x+r.x)/2,centerY=(l.y+r.y)/2,span=Math.max(.1,Math.abs(r.x-l.x));
-     const a=found.faceBlendshapes?.[0]?.categories||[];
-     const weight=(name:string)=>a.find(x=>x.categoryName===name)?.score||0;
-     setMotion(prev=>{
-      const smoothing=.24,blend=(old:number,v:number)=>old+(clamp(v)*.95-old)*smoothing;
-      const dx=r.x-l.x,dy=r.y-l.y;
-      return {yaw:blend(prev.yaw,(nose.x-centerX)/span*1.2),pitch:blend(prev.pitch,((forehead.y+chin.y)/2-nose.y)*1.4),roll:blend(prev.roll,Math.atan2(dy,dx)*1.5),
-        gazeX:blend(prev.gazeX,-(nose.x-.5)*1.3),gazeY:blend(prev.gazeY,(nose.y-.5)*1.2),
-        blink:Math.max(0,Math.min(1,(weight("eyeBlinkLeft")+weight("eyeBlinkRight"))/2)),
-        smile:Math.max(0,Math.min(1,(weight("mouthSmileLeft")+weight("mouthSmileRight"))/2)),
-        mouth:Math.max(0,Math.min(1,weight("jawOpen")))};
-     });
+     const [l,r]=[point(33),point(263)];
+     const target=attentionTarget((l.x+r.x)/2,(l.y+r.y)/2);
+     setMotion(prev=>({...NEUTRAL_FACE,gazeX:prev.gazeX+(target.gazeX-prev.gazeX)*.24,gazeY:prev.gazeY+(target.gazeY-prev.gazeY)*.24}));
     }catch{cleanup();setStatus("error");setError("Se interrumpió el análisis facial. Vuelve a activar la cámara.")}
    };
    frame.current=requestAnimationFrame(loop);
