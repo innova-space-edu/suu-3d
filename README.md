@@ -37,3 +37,21 @@ Más información: `docs/INTEGRATIONS.md`.
 SUU incorpora las voces estándar de EDUAI con Edge TTS, selección por usuario, voces locales del navegador y respaldo ElevenLabs. El motor de lenguaje usa Groq primero y permite SambaNova, OpenRouter y Gemini como proveedores alternativos, sin requerir OpenAI. Las voces privadas clonadas de EDUAI conservan los permisos originales y aún necesitan delegación por usuario.
 
 Consulta [Voces y proveedores](docs/VOICE_PROVIDERS.md) y [.env.example](.env.example).
+
+
+## Modo Expo Ciencias 2026
+
+Inicia sesión y abre **Modo feria**. No se activa ningún dispositivo al abrirlo.
+
+1. Coloca el PC y la cámara en el acceso definitivo y activa la cámara de prueba.
+2. Con una sola persona visible, pulsa **Enseñar entrada** y recorre el acceso durante seis segundos. Repite con **Enseñar salida** en sentido contrario.
+3. Haz ambos recorridos otra vez sin voz. Comprueba que las etiquetas de entrada y salida sean correctas antes de activar la feria con audio.
+4. **Activar feria con audio** inicia la escucha de preguntas y los saludos automáticos. **Detener feria y dispositivos** libera cámara y micrófono.
+
+SUU termina una bienvenida completa por grupo. No acumula mensajes por estudiante. Si continúan entrando personas después de terminar, vuelve a saludar tras una pausa breve. Las entradas tienen prioridad sobre salidas simultáneas; los mensajes caducan mientras SUU responde preguntas. El micrófono se suspende durante la voz de SUU y vuelve a escuchar después.
+
+La calibración guarda únicamente eje, dirección y rango geométrico en este navegador. Si se mueve la cámara, hay que enseñar ambos recorridos de nuevo. El detector descarga el modelo MediaPipe al activar la cámara y procesa los fotogramas localmente; no se guardan ni se envían rostros o grabaciones. El reconocimiento de voz conserva el funcionamiento del navegador/proveedor configurado.
+
+La dirección se estima por movimiento de cuerpos y tamaño aparente, sin identificar personas. No se interpreta la ausencia de un rostro como una salida. Las oclusiones, grupos densos y recorridos que no se distinguen desde la cámara pueden producir errores; es necesaria una prueba en el lugar antes del uso público. No sirve como contador de asistencia. La prueba automatizada de navegador usa detecciones y audio simulados, no valida una multitud real.
+
+El modo guía utiliza quince fichas resumidas de los afiches aportados, sin publicar los documentos originales ni identidades de estudiantes. Omite plantillas vacías y agrupa versiones repetidas. No inventa autores ni puestos; cuando se pregunta por autoría, indica que no consta en el catálogo. Las preguntas ajenas a la feria siguen permitidas. Reutiliza las voces y proveedores existentes: no requiere nuevas variables de Vercel. Requiere cámara, micrófono y reconocimiento de voz compatible (Chrome o Edge).
