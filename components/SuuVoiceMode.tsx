@@ -5,6 +5,7 @@ import {spokenText,fairSpokenText,fairAudienceText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import {selectBrowserVoice} from "@/lib/browser-voice";
+import {fairResponse} from "@/lib/fair-response";
 import dynamic from "next/dynamic";
 import {Mic,MicOff,Volume2,VolumeX,X,AudioLines} from "lucide-react";
 import type {ChatMessage,Domain} from "@/lib/providers";
@@ -86,9 +87,13 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
   const messages=[...history.current,{role:"user" as const,content:text}].slice(-16);history.current=messages;
   const ctl=new AbortController();abort.current=ctl;
   try{
-   const response=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},signal:ctl.signal,body:JSON.stringify({messages,domain,mode:fairMode?"fair":undefined})});
-   const data=await response.json();
-   if(!response.ok)throw new Error(data.error||"Error de conversación");
+   let data:{reply?:string;provider?:string};
+   if(fairMode)data={reply:fairResponse(messages),provider:"Catálogo Expo · local"};
+   else{
+    const response=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},signal:ctl.signal,body:JSON.stringify({messages,domain})});
+    data=await response.json();
+    if(!response.ok)throw new Error((data as {error?:string}).error||"Error de conversación");
+   }
    if(stopSignal.current)return;
    const rawReply=String(data.reply||"").trim();const reply=fairMode?fairAudienceText(rawReply):rawReply;if(!reply)throw new Error("SUU no generó una respuesta");
    history.current=[...messages,{role:"assistant" as const,content:reply}].slice(-16);

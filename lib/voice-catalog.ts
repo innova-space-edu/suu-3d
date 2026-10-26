@@ -11,6 +11,6 @@ export const EDUAI_VOICES:VoiceEntry[]=[
  {id:"es-US-AlonsoNeural",label:"Alonso · Español (EE. UU.)",locale:"es-US",source:"eduai",gender:"male"},
  {id:"es-US-PalomaNeural",label:"Paloma · Español (EE. UU.)",locale:"es-US",source:"eduai",gender:"female"}
 ];
-export const DEFAULT_VOICE_ID="es-CL-CatalinaNeural";
+export const DEFAULT_VOICE_ID="es-MX-DaliaNeural";
 export function knownVoice(id:string){return EDUAI_VOICES.find(v=>v.id===id)}
 export function voiceCatalog(){return [...EDUAI_VOICES,...(process.env.ELEVENLABS_API_KEY&&process.env.ELEVENLABS_VOICE_ID?[{id:"elevenlabs:default",label:"ElevenLabs · voz configurada",locale:"multi",source:"elevenlabs" as const}]:[])]}
