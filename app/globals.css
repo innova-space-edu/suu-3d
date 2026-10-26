@@ -39,3 +39,14 @@
 .fairIntro{width:min(470px,calc(100vw - 32px));max-height:calc(100dvh - 40px);overflow:auto;border:1px solid #36776a;border-radius:16px;background:#091f27;color:#dcf2ed;padding:24px;box-shadow:0 20px 70px #0009}.fairIntro::backdrop{background:#020b14c9;backdrop-filter:blur(5px)}.fairIntro h2{font-size:20px;margin:0 0 15px}.fairIntro p,.fairIntro li{font-size:14px;line-height:1.55}.fairIntro ol{padding-left:22px}.fairIntro li{margin-bottom:8px}.fairIntro button{border:1px solid #448d7c;border-radius:8px;background:#123c36;color:#edfff8;padding:11px 14px;margin:4px 0;text-align:left}.fairIntro button:focus-visible{outline:2px solid #9fffe3;outline-offset:3px}.fairIntroActions{display:flex;flex-direction:column;gap:5px}.fairIntro .fairIntroClose{display:block;background:transparent;border-color:#41606b;margin-top:16px}
 
 .fairChoiceDescription{display:block;font-size:12px;line-height:1.5;color:#acd3c8;margin-top:6px}.fairModeSwitch{position:fixed;z-index:16;top:22px;right:100px;border:1px solid #347895;border-radius:9px;background:#0d2d44;color:#d2f4fb;padding:10px 12px;font-size:12px}.fairModeShell .voiceHeader>div{padding-right:190px}@media(max-width:660px){.fairModeSwitch{top:17px;right:65px;font-size:10px;padding:8px}.fairModeShell .voiceHeader>div{padding-right:130px;gap:8px}.fairModeShell .voiceHeader span{font-size:8px;max-width:120px}}
+
+/* Caption length must never resize the avatar. Long replies scroll inside their own slot. */
+.voiceOnlyOverlay{display:grid;grid-template-rows:74px minmax(0,1fr) clamp(190px,30dvh,245px);overflow:hidden}
+.voiceHeader{height:74px;min-height:0;overflow:hidden}
+.voiceHeader span{max-height:40px;overflow:hidden}
+.voiceScene{height:100%;min-height:0;max-height:none;flex:none}
+.voiceBottom{height:100%;min-height:0;overflow:hidden;display:grid;grid-template-rows:20px minmax(0,1fr) 64px auto;justify-items:center;gap:8px;padding:10px 20px 16px}
+.voiceBottom p{width:100%;height:100%;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;text-align:center}
+.voiceBottom small{max-height:30px;overflow:auto}
+.voiceControls{justify-content:center}
+@media(max-width:660px){.voiceOnlyOverlay{grid-template-rows:70px minmax(0,1fr) clamp(190px,30dvh,245px)}.voiceHeader{height:70px}.voiceScene{max-height:none}.voiceBottom{padding:8px 12px 12px}}

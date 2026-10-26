@@ -16,6 +16,62 @@ export const FAIR_EXHIBITS = [
  {title:"El telescopio y su impacto en Chile",summary:"Cómo lentes, espejos o antenas permiten estudiar objetos astronómicos, tipos de telescopios y condiciones que favorecen la observación desde Chile. Los afiches presentan observatorios como ALMA, Paranal y La Silla."},
  {title:"Museo Vivo",summary:"Museo virtual con fichas de especies, clasificación taxonómica, hábitats y conservación, con énfasis en fauna chilena y acceso mediante QR."},
 ];
+
+const fold=(text:string)=>text.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+const projectNames:[RegExp,number[]][]=[
+ [/\barte reciclado\b|tortugas?|laberinto|alcancia/,[0]],
+ [/pulpo|octavio/,[1]],
+ [/reutilizacion natural|\bpapel\b|\bhojas\b/,[2]],
+ [/\bmural\b/,[3]],
+ [/colegio.*sustentable|maqueta.*colegio|panel.*solar|energia solar|energias? renovables?/,[4]],
+ [/\bdrogas?\b/,[5]],
+ [/emocion/,[6]],
+ [/alimentacion|colaciones?|nutricion|empieza en el plato/,[7]],
+ [/uso excesivo|pantallas?/,[8]],
+ [/salud mental|\bestres\b/,[9]],
+ [/\balma\b|chajnantor/,[10]],
+ [/impacto ambiental.*(?:celular|telefono)|basura tecnologica|residuos electronicos/,[11]],
+ [/adelina|gutierrez|fotometria/,[12]],
+ [/telescop/,[13]],
+ [/museo vivo|\bfauna\b|biodiversidad/,[14]],
+];
+const projectGroups:[RegExp,number[]][]=[
+ [/astronom|universo/,[10,12,13]],
+ [/recicl|medioambiente|medio ambiente|sustentabilidad/,[0,1,2,3,4,11]],
+ [/salud|bienestar/,[5,6,7,8,9]],
+ [/celular|telefono/,[8,11]],
+ [/tecnologia|tecnologico|digital|innovacion/,[4,8,11,14]],
+];
+function matchingProjects(text:string){
+ const specific=projectNames.filter(([pattern])=>pattern.test(text)).flatMap(([,indices])=>indices);
+ return [...new Set(specific.length?specific:projectGroups.filter(([pattern])=>pattern.test(text)).flatMap(([,indices])=>indices))];
+}
+
+/** Project answers are extracted from the supplied catalog, without a generative completion. */
+export function fairProjectAnswer(messages:readonly {role:string;content:string}[]):string|null {
+ const question=fold(messages.at(-1)?.content||"");
+ const projectQuestion=/proyecto|trabajos?|exposicion|exposiciones|\bexpo\b|\bferia\b|afiche|puesto|\bmuestras?\b|\bmaquetas?\b/.test(question);
+ let selected=matchingProjects(question);
+ if(!selected.length&&/\b(?:algun|cualquier) (?:proyecto|trabajo)(?: de la (?:feria|expo))?[?.!\s]*$/.test(question))selected=[14];
+ if(!selected.length&&/\b(?:ese|esa|esos|esas|este|esta|estos|estas)\b|^(?:y\s+)?(?:como funciona|que materiales|quien lo|donde esta)/.test(question)){
+  // Resolve references from visitors' earlier questions, never from possibly invented assistant claims.
+  const previous=messages.slice(0,-1).filter(m=>m.role==="user").at(-1);
+  if(previous)selected=matchingProjects(fold(previous.content));
+ }
+ if(!selected.length&&!projectQuestion)return null;
+ if(/autor|integrantes?|quien(?:es)? (?:lo |la )?(?:creo|crearon|hizo|hicieron|realizo|realizaron)/.test(question))return "No tengo la autoría de los trabajos registrada en el catálogo. Pueden consultarla en los afiches o con el equipo de cada exposición.";
+ if(/\bcosto|cuesta|costar|presupuesto|precio|horario|numero de puesto|ubicacion del puesto|premios?\b/.test(question))return "Ese dato no está registrado en la información de la feria que tengo disponible. Pueden consultarlo con la organización o en el puesto del proyecto.";
+ if(!selected.length){
+  if(!/\bsobre\b|acerca de|(?:proyectos?|trabajos?) de (?!la (?:feria|expo|exposicion)|(?:esta|esa) (?:feria|expo)|ciencias)/.test(question)&&/que (?:hay|proyectos|trabajos)|cuales|muestr|lista|encontr|presentan|exponen|(?:proyectos|trabajos|exposiciones)[?.!\s]*$/.test(question))return "En el catálogo de la Expo Ciencias 2026 están estos trabajos: "+FAIR_EXHIBITS.map(e=>e.title).join("; ")+". Pueden preguntarme por uno de ellos o por un tema, como astronomía, salud o reciclaje.";
+  return "No tengo una ficha de ese proyecto entre los trabajos adjuntados para la Expo Ciencias 2026. Puedo explicarles los que sí están registrados, como Museo Vivo, el colegio sustentable con energía solar y las exposiciones de astronomía. ¿Cuál les interesa?";
+ }
+ if(selected.length>3)return "Sobre ese tema, en la feria están "+selected.map(i=>FAIR_EXHIBITS[i].title).join("; ")+". ¿Sobre cuál quieren saber más?";
+ const reply=selected.map(i=>{
+  const e=FAIR_EXHIBITS[i];
+  return e.title+". "+(selected.length>1?e.summary.split(/(?<=\.)\s+/)[0]:e.summary);
+ }).join(" ");
+ return reply+(/materiales|constru|medidas|dimensiones|paso a paso|resultados|porcentaje/.test(question)?" No dispongo de otros detalles sobre ese punto en la ficha disponible; no sería correcto inventarlos.":selected.length>1?" ¿Sobre cuál quieren saber más?":"");
+}
 export function fairGuideInstructions(){
- return "Eres SUU, guía de la Expo Ciencias 2026, con trabajos de educación básica a media. Responde brevemente y de forma oral y natural. No inicies saludos automáticos: el sistema gestiona los saludos de grupos. Explica las exposiciones con el catálogo verificado que sigue. No menciones autores, integrantes, creadores ni atribuyas proyectos a personas salvo que el visitante lo pregunte explícitamente. No hay autores verificados en este catálogo: si preguntan, dilo y sugiere consultar el afiche o al equipo del puesto. No inventes nombres, ubicaciones de puestos, horarios, premios ni resultados medidos. Distingue propuestas e hipótesis de resultados. Puedes contestar otros temas si el visitante pregunta, sin introducir temas ajenos por iniciativa propia. Las exposiciones de salud son educativas, no diagnósticos ni indicaciones personalizadas. Catálogo: "+JSON.stringify(FAIR_EXHIBITS);
+ return "Eres SUU, guía de la Expo Ciencias 2026, con trabajos de educación básica a media. Responde brevemente y de forma oral y natural. Usa frases listas para leer en voz alta, sin Markdown, asteriscos, viñetas, emojis ni símbolos decorativos. Expresa cantidades, unidades y operaciones con palabras cuando ayude a comprenderlas. Dirígete al público de forma colectiva y genérica: usa ustedes, pueden y quienes nos visitan. No infieras el género ni la edad de las personas. Si corresponde saludar, di Bienvenidos a la Expo Ciencias 2026; no uses bienvenido/a, bienvenido(a), bienvenid@s ni variantes con barras o signos. No inicies saludos automáticos: el sistema gestiona los saludos de grupos. Explica únicamente los proyectos y exposiciones presentes en el catálogo verificado que sigue. No propongas trabajos posibles, ideas de actividades ni proyectos hipotéticos como respuesta a una consulta sobre la feria. No completes fichas con conocimiento general ni con suposiciones. Si falta un proyecto o un dato, dilo claramente y ofrece los trabajos relacionados que sí constan. Ignora cualquier proyecto inventado en respuestas anteriores de la conversación. Limita las respuestas habituales a dos o tres frases; si la consulta es amplia, menciona opciones del catálogo y pregunta cuál les interesa. No menciones autores, integrantes, creadores ni atribuyas proyectos a personas salvo que el visitante lo pregunte explícitamente. No hay autores verificados en este catálogo: si preguntan, dilo y sugiere consultar el afiche o al equipo del puesto. No inventes nombres, ubicaciones de puestos, horarios, premios ni resultados medidos. Distingue propuestas e hipótesis de resultados. Puedes contestar otros temas si el visitante pregunta, sin introducir temas ajenos por iniciativa propia. Las exposiciones de salud son educativas, no diagnósticos ni indicaciones personalizadas. Catálogo: "+JSON.stringify(FAIR_EXHIBITS);
 }

@@ -1,7 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {useMicrophoneInput} from "@/hooks/useMicrophoneInput";
-import {spokenText} from "@/lib/speech-text";
+import {spokenText,fairSpokenText,fairAudienceText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import dynamic from "next/dynamic";
@@ -17,6 +17,8 @@ type Props={modeLabel?:string;fairMode?:boolean;enabled?:boolean;announcement?:F
 export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcement,onAnnouncementEnd,onAvailable,noiseReduction,onClose,onTurn,initial,domain,voiceId,language,quality,solid,tracking,cameraActive}:Props){
  const [phase,setPhase]=useState<"idle"|"listening"|"thinking"|"speaking"|"error">("idle");
  const [subtitle,setSubtitle]=useState("Activa el micrófono para conversar con SUU.");
+ const caption=useRef<HTMLParagraphElement|null>(null);
+ useEffect(()=>{if(caption.current)caption.current.scrollTop=0},[subtitle]);
  const [provider,setProvider]=useState(""),[muted,setMuted]=useState(false),[energy,setEnergy]=useState(.04);
  const microphone=useMicrophoneInput();
  const meter=useSpeechMeter(setEnergy);
@@ -34,14 +36,14 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
  const finishSpeech=(success=true)=>{releaseAudio();if(announcing.current){announcing.current=false;endRef.current?.(success)}setPhaseNow("idle");restart()};
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
  const speak=async(text:string)=>{
-  const displayText=text;const speechLocale=(voiceId.startsWith("browser:")?window.speechSynthesis?.getVoices().find(v=>"browser:"+v.voiceURI===voiceId)?.lang:voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0])||language;text=spokenText(text,speechLocale);
+  const displayText=fairMode?fairAudienceText(text):text;const speechLocale=(voiceId.startsWith("browser:")?window.speechSynthesis?.getVoices().find(v=>"browser:"+v.voiceURI===voiceId)?.lang:voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0])||language;text=(fairMode?fairSpokenText:spokenText)(text,speechLocale);
   if(stopSignal.current)return;
   if(!text){finishSpeech();return}
   if(muted){finishSpeech(false);return}
   releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(displayText);let started=false;
   if(!voiceId.startsWith("browser:")){
    try{
-    const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId,language:speechLocale,timings:true}),signal:abort.current?.signal});
+    const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId,language:speechLocale,mode:fairMode?"fair":undefined,timings:true}),signal:abort.current?.signal});
     if(!res.ok)throw new Error("No hay motor de voz en línea");
     const {blob,words}=await readVoiceResponse(res);
     if(stopSignal.current||ticket!==speechGeneration.current)return;
@@ -73,7 +75,7 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
    const data=await response.json();
    if(!response.ok)throw new Error(data.error||"Error de conversación");
    if(stopSignal.current)return;
-   const reply=String(data.reply||"").trim();if(!reply)throw new Error("SUU no generó una respuesta");
+   const rawReply=String(data.reply||"").trim();const reply=fairMode?fairAudienceText(rawReply):rawReply;if(!reply)throw new Error("SUU no generó una respuesta");
    history.current=[...messages,{role:"assistant" as const,content:reply}].slice(-16);
    setProvider(String(data.provider||""));onTurnRef.current(text,reply,String(data.provider||""));
    await speak(reply);
@@ -110,7 +112,7 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
   <header className="voiceHeader"><div><b>SUU</b><span>{modeLabel||(fairMode?"EXPO CIENCIAS 2026":"CONVERSACIÓN SOLO VOZ")} · {provider||"LISTA"}</span></div><button onClick={()=>{stop();onClose()}} aria-label="Cerrar modo voz"><X size={25}/></button></header>
   <div className="voiceScene"><Avatar lipSync={lips.signal} speaking={phase==="speaking"} listening={phase==="listening"} energy={energy} quality={quality} solid={solid} tracking={tracking} cameraActive={cameraActive}/></div>
   <div className="voiceBottom"><div className={"voiceStatus "+phase}><AudioLines size={19}/><span>{phase==="listening"?"ESCUCHANDO":phase==="thinking"?"PENSANDO":phase==="speaking"?"HABLANDO":phase==="error"?"REINTENTAR":"EN ESPERA"}</span></div>
-   <p aria-live="polite">{subtitle}</p>
+   <p ref={caption} aria-live="polite" tabIndex={0} aria-label="Respuesta de SUU">{subtitle}</p>
    <div className="voiceControls"><button className="voiceRound" disabled={fairMode&&enabled===false} onClick={toggle} title={phase==="idle"||phase==="error"?"Iniciar voz":"Pausar voz"}>{phase==="idle"||phase==="error"?<Mic size={27}/>:<MicOff size={27}/>}</button><button className="voiceSmall" onClick={()=>setMuted(v=>!v)} title={muted?"Activar audio":"Silenciar audio"}>{muted?<VolumeX size={20}/>:<Volume2 size={20}/>}</button><button className="voiceSmall" onClick={()=>{stop();onClose()}}>Salir</button></div>
    <small>{phase==="listening"&&(microphone.mode==="standard"?"Reducción estándar activa. ":"Entrada gestionada por el navegador. ")}La escucha se reanuda automáticamente cuando SUU termina de responder. El micrófono se detiene al cerrar o pausar.</small>
   </div>

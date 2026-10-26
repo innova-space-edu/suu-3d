@@ -2,7 +2,7 @@ import {NextRequest,NextResponse} from "next/server";
 import {EdgeTTS,Constants} from "@andresaya/edge-tts";
 import {authorized,originAllowed,throttle,clientIdentity} from "@/lib/security";
 import {DEFAULT_VOICE_ID,knownVoice,voiceCatalog} from "@/lib/voice-catalog";
-import {spokenText} from "@/lib/speech-text";
+import {spokenText,fairSpokenText} from "@/lib/speech-text";
 import {wordTimings} from "@/lib/lip-sync";
 export const runtime="nodejs";export const maxDuration=60;
 export async function GET(){
@@ -33,11 +33,11 @@ export async function POST(req:NextRequest){
  if(!await authorized())return NextResponse.json({error:"Acceso requerido"},{status:401});
  if(!throttle("voice:"+clientIdentity(req),20))return NextResponse.json({error:"Demasiadas solicitudes"},{status:429});
  if(Number(req.headers.get("content-length")||0)>5000)return NextResponse.json({error:"Texto demasiado largo"},{status:413});
- let text="",voiceId=DEFAULT_VOICE_ID,timings=false,language="es-CL";
- try{const b=await req.json();timings=b.timings===true;language=typeof b.language==="string"&&/^[a-z]{2}(?:-[a-z]{2,4})?$/i.test(b.language)?b.language:"es-CL";text=typeof b.text==="string"?b.text.trim():"";voiceId=typeof b.voiceId==="string"?b.voiceId:DEFAULT_VOICE_ID}catch{}
+ let text="",voiceId=DEFAULT_VOICE_ID,timings=false,fairMode=false,language="es-CL";
+ try{const b=await req.json();timings=b.timings===true;fairMode=b.mode==="fair";language=typeof b.language==="string"&&/^[a-z]{2}(?:-[a-z]{2,4})?$/i.test(b.language)?b.language:"es-CL";text=typeof b.text==="string"?b.text.trim():"";voiceId=typeof b.voiceId==="string"?b.voiceId:DEFAULT_VOICE_ID}catch{}
  if(!text||text.length>2000)return NextResponse.json({error:"Texto inválido"},{status:400});
  if(!knownVoice(voiceId)&&voiceId!=="elevenlabs:default")return NextResponse.json({error:"Voz no permitida"},{status:400});
- text=spokenText(text,knownVoice(voiceId)?.locale||language);
+ text=(fairMode?fairSpokenText:spokenText)(text,knownVoice(voiceId)?.locale||language);
  if(!text)return NextResponse.json({error:"El texto no contiene contenido para leer"},{status:400});
  const pipeline=voiceId==="elevenlabs:default"?["premium","edge"] as const:["edge","premium"] as const;
  for(const provider of pipeline){
