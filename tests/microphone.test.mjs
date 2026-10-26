@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import ts from 'typescript';
 const js=ts.transpileModule(readFileSync('lib/microphone.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-const {microphoneConstraints,supportsRecognitionTrack,startMicrophoneRecognition}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const {disableNoiseReduction,microphoneConstraints,supportsRecognitionTrack,startMicrophoneRecognition}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 const ua='Mozilla/5.0 (Windows NT 10.0) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.0.0';
 function input(){let stopped=0;const track={kind:'audio',readyState:'live',getSettings:()=>({noiseSuppression:true}),stop:()=>stopped++};return {track,stream:{getTracks:()=>[track],getAudioTracks:()=>[track]},stopped:()=>stopped}}
 test('standard capture avoids strong isolation and gain pumping',()=>{
@@ -23,4 +23,12 @@ test('explicit unsupported track input releases capture before native fallback',
  const mic=input(),calls=[];
  const result=await startMicrophoneRecognition({start:t=>{calls.push(t);if(t)throw new TypeError('unsupported')}},true,{userAgent:ua,capture:async()=>mic.stream},()=>false);
  assert.equal(result.mode,'browser');assert.equal(mic.stopped(),1);assert.deepEqual(calls,[mic.track,undefined]);
+});
+
+test('disabling noise suppression verifies the result instead of trusting an ignored constraint',async()=>{
+ let constraints;
+ await disableNoiseReduction({applyConstraints:async c=>{constraints=c},getSettings:()=>({noiseSuppression:false})});
+ assert.deepEqual(constraints,{noiseSuppression:false});
+ await assert.rejects(()=>disableNoiseReduction({applyConstraints:async()=>{},getSettings:()=>({noiseSuppression:true})}));
+ await assert.rejects(()=>disableNoiseReduction({applyConstraints:async()=>{throw Error('unsupported')},getSettings:()=>({noiseSuppression:true})}));
 });

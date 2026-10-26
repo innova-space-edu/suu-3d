@@ -1,5 +1,9 @@
 export type RecognitionInput={start(track?:MediaStreamTrack):void};
 export type MicrophoneMode="off"|"standard"|"browser";
+export async function disableNoiseReduction(track:Pick<MediaStreamTrack,"applyConstraints"|"getSettings">){
+ await track.applyConstraints({noiseSuppression:false});
+ if(track.getSettings().noiseSuppression===true)throw new Error("El navegador mantuvo la reducción de ruido activa.");
+}
 /** No hard gate, strong voice isolation or automatic gain pumping. */
 export function microphoneConstraints(reduceNoise:boolean):MediaTrackConstraints&{voiceIsolation:boolean}{
  return {noiseSuppression:reduceNoise,echoCancellation:true,autoGainControl:false,voiceIsolation:false};
