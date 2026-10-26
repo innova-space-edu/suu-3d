@@ -50,3 +50,19 @@ test('the guide catalog provides project topics without publishing student ident
  const {FAIR_EXHIBITS,fairGuideInstructions}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-guide.ts')).toString('base64'));
  assert.equal(FAIR_EXHIBITS.length,15);assert.ok(FAIR_EXHIBITS.some(e=>e.title==='Museo Vivo'));assert.match(fairGuideInstructions(),/salvo que el visitante lo pregunte explícitamente/);assert.match(fairGuideInstructions(),/No hay autores verificados/);
 });
+
+test('project questions use only the attached catalog, including astronomy and unknown exhibits',async()=>{
+ const {fairProjectAnswer}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-guide.ts')).toString('base64'));
+ const ask=content=>fairProjectAnswer([{role:'user',content}]);
+ const astro=ask('Háblanos de los trabajos de astronomía de la Expo Ciencias');
+ assert.match(astro,/Proyecto ALMA/);assert.match(astro,/Adelina/);assert.match(astro,/telescopio/);assert.ok(!/agujeros|constelaciones|maquetas interactivas/i.test(astro));
+ assert.match(ask('Cuéntanos sobre Museo Vivo'),/clasificación taxonómica/);
+ assert.match(ask('Háblanos del proyecto de robótica en Marte'),/No tengo una ficha/);
+ assert.match(ask('¿Qué proyectos de robótica hay?'),/No tengo una ficha/);
+ assert.match(ask('¿Quién creó el proyecto ALMA?'),/No tengo la autoría/);
+ assert.match(ask('¿Cuánto cuesta el proyecto Museo Vivo?'),/no está registrado/i);
+ assert.match(ask('Cuéntennos sobre los trabajos'),/Museo Vivo/);assert.match(ask('Háblanos de algún proyecto'),/Museo Vivo/);
+ const listing=ask('¿Qué proyectos hay en la feria?');assert.match(listing,/Museo Vivo/);assert.match(listing,/Arte reciclado/);
+ const follow=fairProjectAnswer([{role:'user',content:'Proyecto ALMA'},{role:'assistant',content:'Hay robots que fabrican cohetes'},{role:'user',content:'¿Cómo funciona ese proyecto?'}]);assert.match(follow,/Chajnantor/);assert.ok(!follow.includes('robots'));
+ assert.equal(ask('Hola, ¿cómo están?'),null);
+});

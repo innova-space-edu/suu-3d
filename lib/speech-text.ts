@@ -45,3 +45,33 @@ export function spokenText(text:string,locale="es-CL"){
   .replace(/[ \t]+/g," ").replace(/[ \t]*\n[ \t]*/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
  return englishPronunciation(cleaned,locale);
 }
+
+/** Collective address for the fair. Does not change ordinary nouns such as "la bienvenida". */
+export function fairAudienceText(text:string){
+ const plural=(word:string)=>word.startsWith("B")?"Bienvenidos":"bienvenidos";
+ return text
+  .replace(/(?<![\p{L}\p{N}_])bienvenid(?:o|a|os|as)?(?:\s*\/\s*(?:o|a|os|as)|\((?:o|a|os|as)\)|@s?|xs?)(?![\p{L}\p{N}_])/giu,plural)
+  .replace(/(?<![\p{L}\p{N}_])bienvenid(?:o|a|as)(?=\s+(?:a|al)\b|[!.?]|$)/giu,(word,offset:number,source:string)=>{
+   if(/\b(?:la|las|una|unas|su|sus|tu|tus|esta|estas|nuestra|nuestras)(?:\s+[\p{L}]+){0,4}\s*$/iu.test(source.slice(0,offset)))return word;
+   return plural(word);
+  })
+  .replace(/(?<![\p{L}\p{N}_])tod(?:os|as)\s*\/\s*(?:os|as)(?![\p{L}\p{N}_])/giu,word=>word.startsWith("T")?"Todos":"todos");
+}
+
+/** Oral fair narration: remove visual ornaments without discarding scientific quantities. */
+export function fairSpokenText(text:string,locale="es-CL"){
+ const english=/^en(?:-|$)/i.test(locale);
+ const cleaned=fairAudienceText(spokenText(text,locale))
+  .replace(/[¡¿]/g,"")
+  .replace(/https?:\/\/[^\s<>]+/gi,english?"the link on screen":"el enlace disponible en pantalla")
+  .replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/gi,english?"the email address on screen":"el correo disponible en pantalla")
+  .replace(/&(?:ast|star|bull|check|checkmark);|&#(?:0*42|x0*2a);/gi," ")
+  .replace(/<\/?[A-Za-z][\w:-]*(?:\s[^<>]*)?\s*\/?>/g," ")
+  .replace(/(?<=\d)\s*\*\s*(?=\d)/g,english?" times ":" por ")
+  .replace(/(?<=\d)\s*%/g,english?" percent":" por ciento")
+  .replace(/(?<=\d)\s*°\s*C\b/gi,english?" degrees Celsius":" grados Celsius")
+  .replace(/[#*_`~]+/g," ")
+  .replace(/[★☆✓✔✗✘✦✧◆◇♦■□●○►▸▪▫•→←⇒↔|]/gu,", ")
+  .replace(/(?:,\s*){2,}/g,", ").replace(/^[\s,]+|[\s,]+$/g,"");
+ return spokenText(cleaned,locale);
+}
