@@ -66,3 +66,15 @@ test('project questions use only the attached catalog, including astronomy and u
  const follow=fairProjectAnswer([{role:'user',content:'Proyecto ALMA'},{role:'assistant',content:'Hay robots que fabrican cohetes'},{role:'user',content:'¿Cómo funciona ese proyecto?'}]);assert.match(follow,/Chajnantor/);assert.ok(!follow.includes('robots'));
  assert.equal(ask('Hola, ¿cómo están?'),null);
 });
+
+test('prepared fair answers handle paraphrases and contextual follow-ups without a completion',async()=>{
+ const {fairProjectAnswer:answer}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-guide.ts')).toString('base64'));
+ const ask=q=>answer([{role:'user',content:q}]);
+ for(const q of ['¿Cómo te llamas?','¿Quién eres?','¿Cuál es tu nombre?'])assert.match(ask(q),/Mi nombre es SUU/);
+ for(const q of ['Dime sobre los trabajos.','Háblame de los proyectos','¿Qué trabajos hay?'])assert.match(ask(q),/Arte reciclado.*Museo Vivo/);
+ const history=[{role:'user',content:'Háblame de astronomía'},{role:'assistant',content:ask('Háblame de astronomía')},{role:'user',content:'¿Cuál más tienes?'}];
+ const more=answer(history);assert.match(more,/Arte reciclado/);assert.ok(!more.includes('Proyecto ALMA'));
+ assert.match(answer([{role:'user',content:'Consumo de drogas'},{role:'assistant',content:ask('Consumo de drogas')},{role:'user',content:'¿Quién lo hizo?'}]),/No tengo la autoría/);
+ assert.equal(ask('Explícame la física cuántica'),null);
+ assert.match(ask('¿Qué trabajos de robótica hay?'),/No tengo una ficha/);
+});
