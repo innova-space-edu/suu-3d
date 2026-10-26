@@ -8,6 +8,9 @@ import dynamic from "next/dynamic";
 import {Mic,MicOff,Volume2,VolumeX,X,AudioLines} from "lucide-react";
 import type {ChatMessage,Domain} from "@/lib/providers";
 import type {FaceMotion} from "@/hooks/useSuuFaceTracking";
+// Bounded, tab-local audio reuse: no visitor text is persisted to disk.
+const fairAudioCache=new Map<string,Awaited<ReturnType<typeof readVoiceResponse>>>();
+let fairAudioBytes=0;
 const Avatar=dynamic(()=>import("./SuuAvatar"),{ssr:false});
 type SpeechResult={results:Record<number,Record<number,{transcript:string}>>};
 type Recognition={lang:string;continuous:boolean;interimResults:boolean;onresult:((event:SpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;onspeechstart:(()=>void)|null;onspeechend:(()=>void)|null;start(track?:MediaStreamTrack):void;stop():void};
@@ -43,9 +46,20 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
   releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(displayText);let started=false;
   if(!voiceId.startsWith("browser:")){
    try{
-    const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId,language:speechLocale,mode:fairMode?"fair":undefined,timings:true}),signal:abort.current?.signal});
-    if(!res.ok)throw new Error("No hay motor de voz en línea");
-    const {blob,words}=await readVoiceResponse(res);
+    const cacheKey=JSON.stringify([voiceId,speechLocale,text.slice(0,1900)]);
+    let recording=fairMode?fairAudioCache.get(cacheKey):undefined;
+    if(!recording){
+     const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId,language:speechLocale,mode:fairMode?"fair":undefined,timings:true}),signal:abort.current?.signal});
+     if(!res.ok)throw new Error("No hay motor de voz en línea");
+     recording=await readVoiceResponse(res);
+     if(fairMode&&recording.blob.size<=8000000){
+      while(fairAudioCache.size&&(fairAudioBytes+recording.blob.size>24000000||fairAudioCache.size>=60)){
+       const oldest=fairAudioCache.keys().next().value!;fairAudioBytes-=fairAudioCache.get(oldest)!.blob.size;fairAudioCache.delete(oldest);
+      }
+      fairAudioCache.set(cacheKey,recording);fairAudioBytes+=recording.blob.size;
+     }
+    }
+    const {blob,words}=recording;
     if(stopSignal.current||ticket!==speechGeneration.current)return;
     audioUrl.current=URL.createObjectURL(blob);const player=new Audio(audioUrl.current);audio.current=player;lips.audio(player,text.slice(0,1900),words);
     player.onended=()=>finishSpeech();

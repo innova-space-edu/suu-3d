@@ -70,3 +70,8 @@ En ambas modalidades de feria SUU se dirige al público de forma colectiva: «Bi
 
 
 En el visor de voz la respuesta ocupa una zona de altura fija y se desplaza por separado; su longitud no cambia el espacio del rostro. Las consultas identificadas sobre proyectos de la feria se responden por extracción del catálogo adjuntado, sin completar con propuestas generadas. Astronomía remite a ALMA, Adelina Gutiérrez y telescopios. Los proyectos desconocidos y los datos no registrados se indican expresamente. Las referencias de seguimiento se resuelven a partir de preguntas anteriores de visitantes, sin reutilizar proyectos inventados en respuestas previas.
+
+### Respuestas preparadas en la feria
+Las preguntas habituales de presentación, ayuda, agradecimiento y despedida se responden sin un modelo generativo. Las consultas sobre los trabajos y sus variantes usan el catálogo verificado; las continuaciones breves recuperan el contexto y ofrecen hasta cuatro trabajos todavía no mencionados en la conversación disponible. Las preguntas abiertas siguen usando los proveedores configurados.
+
+En modo feria se reutiliza el audio con sus tiempos de palabras para el mismo texto, voz e idioma. La memoria es local a la pestaña, con hasta 60 grabaciones y 24 MB; se pierde al recargar. La primera reproducción requiere el servicio de voz, con respaldo del navegador. No hay grabación del micrófono ni persistencia de conversaciones en esta caché.

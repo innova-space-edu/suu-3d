@@ -47,18 +47,39 @@ function matchingProjects(text:string){
  return [...new Set(specific.length?specific:projectGroups.filter(([pattern])=>pattern.test(text)).flatMap(([,indices])=>indices))];
 }
 
+/** Common visitor intents are deliberately narrow; unknown questions still use the provider. */
+function preparedAnswer(question:string):string|null {
+ if(/^(?:hola|buenos dias|buenas tardes|buenas noches)[!.?\s]*$/.test(question))return "Bienvenidos a la Expo Ciencias 2026. Soy SUU, su guía. Pueden preguntarme por los trabajos de astronomía, salud, reciclaje y tecnología.";
+ if(/como te llamas|cual es tu nombre|quien eres|eres suu/.test(question))return "Mi nombre es SUU. Soy su guía en la Expo Ciencias 2026. Puedo explicarles los trabajos registrados y ayudarles a elegir qué conocer.";
+ if(/^(?:muchas )?gracias[!.?\s]*$/.test(question))return "Con gusto. Si quieren conocer otro trabajo de la Expo Ciencias, aquí estoy para ayudarles.";
+ if(/^(?:adios|hasta luego|nos vemos)[!.?\s]*$/.test(question))return "Hasta luego. Espero que hayan disfrutado de esta exposición de ciencias y tecnología.";
+ if(/que (?:puedes hacer|sabes hacer)|(?:que sabes|hablame) sobre detalles|como (?:puedes|nos puedes) ayudar/.test(question))return "Puedo explicarles los trabajos del catálogo de la Expo Ciencias 2026. Hay temas de astronomía, salud, reciclaje, energía solar y tecnología. ¿Qué tema les interesa?";
+ return null;
+}
+function catalogList(indices:number[]){return "Pueden conocer estos trabajos: "+indices.map(i=>FAIR_EXHIBITS[i].title).join("; ")+". ¿Sobre cuál quieren saber más?"}
+
 /** Project answers are extracted from the supplied catalog, without a generative completion. */
 export function fairProjectAnswer(messages:readonly {role:string;content:string}[]):string|null {
- const question=fold(messages.at(-1)?.content||"");
+ const question=fold(messages.at(-1)?.content||"").replace(/[¿¡]/g,"").trim();
+ const prepared=preparedAnswer(question);if(prepared)return prepared;
+ const users=messages.slice(0,-1).filter(m=>m.role==="user");
+ const continuation=/^(?:y\s+)?(?:cuales son|cuales|que mas(?: hay| tienes)?|cual mas(?: tienes)?|hay otros|otros trabajos|otro proyecto)[?.!\s]*$/.test(question);
+ if(continuation&&users.some(m=>/proyecto|trabajo|expo|feria/.test(fold(m.content))||matchingProjects(fold(m.content)).length)){
+  const mentioned=new Set(messages.slice(0,-1).filter(m=>m.role==="assistant").flatMap(m=>FAIR_EXHIBITS.flatMap((e,i)=>fold(m.content).includes(fold(e.title))?[i]:[])));
+  const remaining=FAIR_EXHIBITS.map((_,i)=>i).filter(i=>!mentioned.has(i));
+  return remaining.length?catalogList(remaining.slice(0,4)):"Ya les mencioné todos los trabajos del catálogo. Pueden elegir cualquiera para que les explique su tema con más detalle.";
+ }
+ const genericList=/^(?:(?:dime|cuentame|cuentanos|cuentennos|hablame|hablanos)(?: algo)? (?:sobre |acerca de |de )?(?:los |las )?(?:trabajos|proyectos|exposiciones)|que (?:trabajos|proyectos|exposiciones) (?:hay|tienen)|cuales son los (?:trabajos|proyectos))(?: de la (?:expo|feria)(?: ciencias)?(?: 2026)?)?[?.!\s]*$/.test(question);
+ if(genericList)return catalogList(FAIR_EXHIBITS.map((_,i)=>i));
  const projectQuestion=/proyecto|trabajos?|exposicion|exposiciones|\bexpo\b|\bferia\b|afiche|puesto|\bmuestras?\b|\bmaquetas?\b/.test(question);
  let selected=matchingProjects(question);
  if(!selected.length&&/\b(?:algun|cualquier) (?:proyecto|trabajo)(?: de la (?:feria|expo))?[?.!\s]*$/.test(question))selected=[14];
  if(!selected.length&&/\b(?:ese|esa|esos|esas|este|esta|estos|estas)\b|^(?:y\s+)?(?:como funciona|que materiales|quien lo|donde esta)/.test(question)){
   // Resolve references from visitors' earlier questions, never from possibly invented assistant claims.
-  const previous=messages.slice(0,-1).filter(m=>m.role==="user").at(-1);
+  const previous=users.findLast(m=>matchingProjects(fold(m.content)).length>0);
   if(previous)selected=matchingProjects(fold(previous.content));
  }
- if(!selected.length&&!projectQuestion)return null;
+ if(!selected.length&&!projectQuestion&&!(/quien|autores|integrantes/.test(question)&&users.some(m=>/proyecto|trabajo|expo|feria/.test(fold(m.content)))))return null;
  if(/autor|integrantes?|quien(?:es)? (?:lo |la )?(?:creo|crearon|hizo|hicieron|realizo|realizaron)/.test(question))return "No tengo la autoría de los trabajos registrada en el catálogo. Pueden consultarla en los afiches o con el equipo de cada exposición.";
  if(/\bcosto|cuesta|costar|presupuesto|precio|horario|numero de puesto|ubicacion del puesto|premios?\b/.test(question))return "Ese dato no está registrado en la información de la feria que tengo disponible. Pueden consultarlo con la organización o en el puesto del proyecto.";
  if(!selected.length){
