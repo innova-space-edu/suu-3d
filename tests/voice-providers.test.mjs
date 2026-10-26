@@ -5,9 +5,9 @@ test("provider priority Dell -> Groq -> SambaNova -> OpenRouter -> Gemini",()=>{
  const code=readFileSync("lib/provider-router.ts","utf8");
  const names=["dell","groq","sambanova","openrouter","gemini"];
  const positions=names.map(id=>{
-  const match=new RegExp('id:\\s*["\\']'+id+'["\\']').exec(code);
-  assert.ok(match,"Falta proveedor "+id);
-  return match.index;
+  const position=code.indexOf('id: "'+id+'"');
+  assert.ok(position>=0,"Falta proveedor "+id);
+  return position;
  });
  for(let index=1;index<positions.length;index++)assert.ok(positions[index-1]<positions[index],names[index]+" fuera de orden");
 });
