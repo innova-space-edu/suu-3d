@@ -4,6 +4,7 @@ import {useMicrophoneInput} from "@/hooks/useMicrophoneInput";
 import {spokenText,fairSpokenText,fairAudienceText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
+import {selectBrowserVoice} from "@/lib/browser-voice";
 import dynamic from "next/dynamic";
 import {Mic,MicOff,Volume2,VolumeX,X,AudioLines} from "lucide-react";
 import type {ChatMessage,Domain} from "@/lib/providers";
@@ -73,7 +74,7 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
   const browserTicket=speechGeneration.current;
   const words=new SpeechSynthesisUtterance(spokenText(text.slice(0,2400),speechLocale));
   words.lang=speechLocale;words.rate=1;const options=window.speechSynthesis.getVoices();
-  words.voice=options.find(v=>voiceId==="browser:"+v.voiceURI)||options.find(v=>v.lang.toLowerCase()===speechLocale.toLowerCase())||null;
+  words.voice=selectBrowserVoice(options,voiceId,speechLocale);
   words.onstart=()=>{if(browserTicket!==speechGeneration.current||stopSignal.current)return;let t=0;timer.current=setInterval(()=>{t+=.85;setEnergy(.15+.32*Math.abs(Math.sin(t)))},90)};
   words.onend=()=>{if(browserTicket===speechGeneration.current&&!stopSignal.current)finishSpeech()};
   words.onerror=()=>{if(browserTicket===speechGeneration.current&&!stopSignal.current)finishSpeech(false)};
