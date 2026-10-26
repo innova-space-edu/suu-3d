@@ -6,7 +6,7 @@ const js=ts.transpileModule(readFileSync('lib/provider-router.ts','utf8'),{compi
 const {chatWithFallback,providerStatus}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 async function isolated(fn){
  const saved={...process.env},fetch=globalThis.fetch,warn=console.warn;
- for(const key of Object.keys(process.env))if(/GROQ|SAMBANOVA|OPENROUTER|GEMINI|SUU_LLM/.test(key))delete process.env[key];
+ for(const key of Object.keys(process.env))if(/GROQ|SAMBANOVA|OPENROUTER|GEMINI|SUU_LLM|SUU_DELL/.test(key))delete process.env[key];
  console.warn=()=>{};
  try{await fn()}finally{process.env=saved;globalThis.fetch=fetch;console.warn=warn}
 }
@@ -27,4 +27,59 @@ test('legacy configuration still routes through the approved provider',()=>isola
  assert.equal(providerStatus().find(p=>p.id==='groq').configured,true);
  globalThis.fetch=async()=>Response.json({choices:[{message:{content:'ok'}}]});
  assert.equal((await chatWithFallback([{role:'user',content:'hola'}],'test')).provider,'Groq');
+}));
+
+test('Dell private API is primary and sends Cloudflare credentials only server-side',()=>isolated(async()=>{
+ Object.assign(process.env,{
+  SUU_DELL_API_BASE_URL:'https://private-ai.example/v1/',
+  SUU_DELL_API_TOKEN:'test-dell-key',
+  SUU_DELL_MODEL:'suu-local',
+  SUU_DELL_CF_ACCESS_CLIENT_ID:'example-access-id',
+  SUU_DELL_CF_ACCESS_CLIENT_SECRET:'example-access-secret',
+  GROQ_API_KEY:'test-groq'
+ });
+ const calls=[];
+ globalThis.fetch=async(url,options)=>{
+  calls.push({url,headers:options.headers,body:JSON.parse(options.body)});
+  return Response.json({choices:[{message:{content:'Hola desde Dell'}}]});
+ };
+ const result=await chatWithFallback([{role:'user',content:'hola'}],'test');
+ assert.equal(result.provider,'Servidor Dell');
+ assert.equal(result.fallbackUsed,false);
+ assert.equal(calls.length,1);
+ assert.equal(calls[0].url,'https://private-ai.example/v1/chat/completions');
+ assert.equal(calls[0].headers.Authorization,'Bearer test-dell-key');
+ assert.equal(calls[0].headers['CF-Access-Client-Id'],'example-access-id');
+ assert.equal(calls[0].body.model,'suu-local');
+ assert.equal(calls[0].body.max_tokens,180);
+ assert.equal(providerStatus().find(p=>p.id==='dell').configured,true);
+}));
+test('Dell 502 immediately falls back to Groq without exposing credentials',()=>isolated(async()=>{
+ Object.assign(process.env,{
+  SUU_DELL_API_BASE_URL:'https://private-ai.example/v1',
+  SUU_DELL_API_TOKEN:'test-dell-key',
+  GROQ_API_KEY:'test-groq'
+ });
+ const urls=[];
+ globalThis.fetch=async url=>{
+  urls.push(url);
+  return urls.length===1
+    ? new Response('private upstream error',{status:502})
+    : Response.json({choices:[{message:{content:'Respaldo correcto'}}]});
+ };
+ const result=await chatWithFallback([{role:'user',content:'hola'}],'test');
+ assert.equal(result.provider,'Groq');
+ assert.equal(result.fallbackUsed,true);
+ assert.equal(urls.length,2);
+}));
+test('Dell requires HTTPS and a complete Cloudflare Access pair',()=>isolated(async()=>{
+ Object.assign(process.env,{
+  NODE_ENV:'production',
+  SUU_DELL_API_BASE_URL:'http://server.example/v1',
+  SUU_DELL_API_TOKEN:'test-key'
+ });
+ assert.equal(providerStatus().find(p=>p.id==='dell').configured,false);
+ process.env.SUU_DELL_API_BASE_URL='https://server.example/v1';
+ process.env.SUU_DELL_CF_ACCESS_CLIENT_ID='partial-id';
+ assert.equal(providerStatus().find(p=>p.id==='dell').configured,false);
 }));
