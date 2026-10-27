@@ -37,7 +37,7 @@ test('both chat and hands-free voice use Piper with lip cues and fallback',()=>{
 });
 
 test('Piper segments synthesize ahead while audio plays and respect cancellation',()=>{
- for(const term of ['requestPiperAudio','requestPhrase(phrases[0]','requestPhrase(phrases[part+1]','const next=','await playClip(player,signal)','signal.addEventListener("abort"'])
+ for(const term of ['requestPiperAudio','playPiperPhrases','const next=prepare()','const next=','await playClip(player,signal)','signal.addEventListener("abort"'])
   assert.ok(playback.includes(term),term);
  assert.ok(api.includes('"Server-Timing"'), 'Piper timing header missing');
 });

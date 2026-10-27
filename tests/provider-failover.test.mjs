@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 const js=ts.transpileModule(readFileSync('lib/provider-router.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-const {chatWithFallback,providerStatus}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const {chatWithFallback,providerStatus,readChatCompletionStream}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 async function isolated(fn){
  const saved={...process.env},fetch=globalThis.fetch,warn=console.warn;
  for(const key of Object.keys(process.env))if(/GROQ|SAMBANOVA|OPENROUTER|GEMINI|SUU_LLM|SUU_DELL/.test(key))delete process.env[key];
@@ -104,4 +104,36 @@ test('Dell requires HTTPS and a complete Cloudflare Access pair',()=>isolated(as
  process.env.SUU_DELL_API_BASE_URL='https://server.example/v1';
  process.env.SUU_DELL_CF_ACCESS_CLIENT_ID='partial-id';
  assert.equal(providerStatus().find(p=>p.id==='dell').configured,false);
+}));
+
+const sseEvent=(content,finish=null)=>'data: '+JSON.stringify({choices:[{delta:{content},finish_reason:finish}]})+'\r\n\r\n';
+test('SSE handles split UTF-8, CRLF and never emits private reasoning',async()=>{
+ const text=': keepalive\r\n\r\ndata: '+JSON.stringify({choices:[{delta:{reasoning_content:'private thought'},finish_reason:null}]})+'\r\n\r\n'+sseEvent('¡Sí, energía!')+sseEvent('', 'stop')+'data: [DONE]\r\n\r\n';
+ const bytes=new TextEncoder().encode(text);
+ const stream=new ReadableStream({start(c){for(const byte of bytes)c.enqueue(Uint8Array.of(byte));c.close()}});
+ const deltas=[];
+ assert.equal(await readChatCompletionStream(new Response(stream),s=>deltas.push(s)),'¡Sí, energía!');
+ assert.deepEqual(deltas,['¡Sí, energía!']);
+});
+test('SSE rejects EOF without a terminal event',async()=>{
+ await assert.rejects(readChatCompletionStream(new Response(sseEvent('Hola')),()=>{}),/Incomplete/);
+});
+test('stream fallback is allowed before content but never after partial text',()=>isolated(async()=>{
+ Object.assign(process.env,{GROQ_API_KEY:'test',SAMBANOVA_API_KEY_SUU:'test'});
+ let calls=0;
+ globalThis.fetch=async()=>{calls++;return calls===1?new Response('bad',{status:503}):new Response(sseEvent('Respuesta completa.','stop'),{headers:{'content-type':'text/event-stream'}})};
+ const deltas=[];
+ const result=await chatWithFallback([{role:'user',content:'hola'}],'test',{onDelta:t=>deltas.push(t)});
+ assert.equal(result.fallbackUsed,true);assert.equal(calls,2);assert.deepEqual(deltas,['Respuesta completa.']);
+ calls=0;
+ globalThis.fetch=async()=>{calls++;return new Response(sseEvent('Respuesta parcial.'),{headers:{'content-type':'text/event-stream'}})};
+ await assert.rejects(chatWithFallback([{role:'user',content:'hola'}],'test',{onDelta:()=>{}}),/interrumpió/);
+ assert.equal(calls,1);
+}));
+test('caller cancellation propagates upstream and prevents provider fallback',()=>isolated(async()=>{
+ Object.assign(process.env,{GROQ_API_KEY:'test',SAMBANOVA_API_KEY_SUU:'test'});
+ const ctl=new AbortController();let calls=0;
+ globalThis.fetch=async(_url,options)=>{calls++;ctl.abort();assert.ok(options.signal.aborted);throw new Error('aborted')};
+ await assert.rejects(chatWithFallback([{role:'user',content:'hola'}],'test',{signal:ctl.signal,onDelta:()=>{}}),/cancelada/);
+ assert.equal(calls,1);
 }));
