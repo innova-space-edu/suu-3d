@@ -61,8 +61,11 @@ if [[ ! -s "$model" ]]; then
   mv -- "$model.partial" "$model"
 fi
 chmod 0600 "$model"
-echo "SHA256 del GGUF (verificar contra origen confiable):"
-sha256sum "$model"
+# SHA256 publicado en la ficha del archivo GGUF Q4_K_M.
+expected_sha="fb044e93939a70469c905781334f5de1e6c8b608ced6cbc8c9249bd4127d9526"
+actual_sha="$(sha256sum "$model" | awk '{print $1}')"
+[[ "$actual_sha" == "$expected_sha" ]] || { echo "SHA256 del GGUF incorrecto: abortado"; exit 1; }
+echo "SHA256 del GGUF verificado: $actual_sha"
 (
   cd "$target"
   docker compose -f compose.yaml config --quiet
