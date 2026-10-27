@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Owner-run, bounded Qwen 4B trial and explicit activation/rollback.
+"""Owner-run, bounded Qwen model trial and explicit activation/rollback.
 No arbitrary host commands, no public ports, no secret output.
 """
 import argparse
@@ -22,12 +22,38 @@ import wave
 
 ROOT = Path(__file__).resolve().parent
 TARGET = Path.home() / "suu-ai"
-MODEL = "Qwen3-4B-Instruct-2507-Q5_K_M.gguf"
-REVISION = "ae44f08e1392f39c0e474af10c3ff8355c8b6688"
-MODEL_SHA = "66713ce35a58a82fe87642d4ec13425bf9b9a46800fff5c49a665ef5701439dc"
-MODEL_BYTES = 2889513696
-URL = ("https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/"
-       + REVISION + "/Qwen_Qwen3-4B-Instruct-2507-Q5_K_M.gguf")
+PROFILES = {
+    "qwen-4b": {
+        "file": "Qwen3-4B-Instruct-2507-Q5_K_M.gguf",
+        "repository": "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+        "remote_file": "Qwen_Qwen3-4B-Instruct-2507-Q5_K_M.gguf",
+        "revision": "ae44f08e1392f39c0e474af10c3ff8355c8b6688",
+        "sha": "66713ce35a58a82fe87642d4ec13425bf9b9a46800fff5c49a665ef5701439dc",
+        "bytes": 2889513696,
+    },
+    "qwen-2b": {
+        "file": "Qwen3.5-2B-Q5_K_M.gguf",
+        "repository": "bartowski/Qwen_Qwen3.5-2B-GGUF",
+        "remote_file": "Qwen_Qwen3.5-2B-Q5_K_M.gguf",
+        "revision": "7d26695454df6de5fbcce2e58681e62dae06ce43",
+        "sha": "3f50d5f830873c22d33558f69eb2c34aa59858f37e7a58a982aae88bb38ebe88",
+        "bytes": 1568476256,
+    },
+}
+
+
+def select_profile(name):
+    global MODEL, REVISION, MODEL_SHA, MODEL_BYTES, URL, PROFILE
+    if name not in PROFILES:
+        raise ValueError("Perfil de modelo no admitido")
+    profile = PROFILES[name]
+    PROFILE = name
+    MODEL = profile["file"]
+    REVISION, MODEL_SHA, MODEL_BYTES = profile["revision"], profile["sha"], profile["bytes"]
+    URL = f"https://huggingface.co/{profile['repository']}/resolve/{REVISION}/{profile['remote_file']}"
+
+
+select_profile("qwen-4b")
 ORIGINAL_COMPOSE_SHA = "c5d4bad2aa53b2553d790b58d2345a6027ca3ef7601c9e8ebd2d6efbb1a7cfc2"
 PREVIOUS_COMPOSE_SHA = "a07a72d5df19f80b2729bd47b6b3d218625b469c12da6c69218a21f20cba8137"
 TRIAL_PORT = 8097
@@ -61,7 +87,7 @@ def memory_available():
 def require_memory(available):
     # Five GiB candidate limit plus two GiB left for host/Piper headroom.
     if available < 7 * GIB:
-        raise ValueError("El ensayo de 4B requiere al menos 7 GiB disponibles (5 GiB de límite y 2 de margen). No se cambia producción.")
+        raise ValueError("El ensayo requiere al menos 7 GiB disponibles (5 GiB de límite y 2 de margen). No se cambia producción.")
 
 
 def docker_command():
@@ -123,7 +149,7 @@ def download():
         raise ValueError("Falta espacio libre para el modelo y margen de descarga")
     partial = model.with_name(model.name + f".partial-{os.getpid()}-{time.time_ns()}")
     try:
-        print("Descargando candidato fijado por revisión y SHA-256 (~2,89 GB)…", flush=True)
+        print(f"Descargando {PROFILE}, revisión y SHA-256 fijados ({MODEL_BYTES / 1e9:.2f} GB)…", flush=True)
         with urllib.request.urlopen(URL, timeout=60) as source, open(os.open(partial, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600), "wb") as output:
             size = 0
             while chunk := source.read(4 * 1024 * 1024):
@@ -238,7 +264,7 @@ def activate(cmd, report_path, token):
     if tested != report["image_id"]:
         raise ValueError("La imagen no coincide con la probada")
     env = regular(TARGET / ".env")
-    backup = TARGET / "backups" / f"before-4b-{time.time_ns()}"
+    backup = TARGET / "backups" / f"before-{PROFILE}-{time.time_ns()}"
     backup.mkdir(mode=0o700, parents=True)
     for name in ("compose.yaml", ".env"):
         shutil.copy2(TARGET / name, backup / name)
@@ -252,7 +278,7 @@ def activate(cmd, report_path, token):
         print("Falló el nuevo perfil; restaurando el anterior…", flush=True)
         restore(cmd, backup, token)
         raise
-    print("Perfil 4B activo, alias suu-local y puerto 8094 conservados.")
+    print(f"Perfil {PROFILE} activo, alias suu-local y puerto 8094 conservados.")
     print("Respaldo:", backup)
     print("Reversión: python3 deploy/dell-ai/admin/trial-model.py --rollback", backup, "--apply")
 
@@ -291,6 +317,7 @@ def physical_cores():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--model", choices=tuple(PROFILES), help="Modelo candidato; producción permanece intacta")
     parser.add_argument("--tune", action="store_true", help="Comparar CPU 2/4/6 con calentamiento; no activa producción")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--activate", type=Path)
@@ -300,6 +327,13 @@ def main():
         parser.error("Ejecutar como propietario, sin sudo delante de Python")
     if TARGET.is_symlink() or not TARGET.is_dir() or (TARGET / "models").is_symlink() or not (TARGET / "models").is_dir():
         raise ValueError("Falta la instalación existente ~/suu-ai")
+    if args.activate:
+        report_profile = json.loads(regular(args.activate).read_text()).get("model_profile", "qwen-4b")
+        if args.model and args.model != report_profile:
+            raise ValueError("El modelo solicitado no coincide con el informe")
+        select_profile(report_profile)
+    else:
+        select_profile(args.model or "qwen-4b")
     available = memory_available()
     print(json.dumps({"available_gib": round(available/GIB, 2), "candidate_limit_gib": 5,
                       "cpu_limit": 2, "model": MODEL, "port_trial": TRIAL_PORT}))
@@ -343,10 +377,10 @@ def main():
     for threads in profiles:
         require_memory(memory_available())
         with candidate_container(cmd, image_id, token, threads) as container:
-            print(f"Calentando candidato 4B con {threads} CPU…", flush=True)
+            print(f"Calentando {PROFILE} con {threads} CPU…", flush=True)
             quality.completion(TRIAL_PORT, token, "Di solamente: listo.", quality.PRESETS["current"])
-            print("Evaluando candidato 4B…", flush=True)
-            candidate = suite(TRIAL_PORT, token, "qwen3-4b-q5", "current")
+            print(f"Evaluando {PROFILE}…", flush=True)
+            candidate = suite(TRIAL_PORT, token, PROFILE, "current")
             try:
                 probes = [voice_probe(token) for _ in range(3)]
                 probe = dict(probes[0])
@@ -358,14 +392,14 @@ def main():
                 probe = {"error": type(error).__name__}
             print(json.dumps({"voice_probe": probe}, ensure_ascii=False))
             state = inspect(cmd, container)["State"]
-            summary = {"candidate_sha": MODEL_SHA, "image_id": image_id, "image_digest": digests[0],
+            summary = {"model_profile": PROFILE, "candidate_sha": MODEL_SHA, "image_id": image_id, "image_digest": digests[0],
                        "baseline": baseline, "candidate": candidate, "voice_probe": probe,
                        "oom_killed": state.get("OOMKilled", False),
                        "resources": {"available_gib_before_trial": round(available / GIB, 2),
                                      "candidate_limit_gib": 5, "candidate_cpus": threads}, "preset": "current"}
             report = TARGET / f"model-trial-{time.time_ns()}.json"
             private_json(report, summary)
-            print(json.dumps({"baseline_exact": score(baseline), "candidate_exact": score(candidate), "scored_cases": 10}))
+            print(json.dumps({"model_profile": PROFILE, "cpu_threads": threads, "first_audio_worst_seconds": probe.get("first_audio_ready_seconds"), "baseline_exact": score(baseline), "candidate_exact": score(candidate), "scored_cases": 10}))
             print("Informe:", report)
             print("Modelo de producción conservado. Revisar las respuestas abiertas y los tiempos.")
             print("Activación tras revisión: python3 deploy/dell-ai/admin/trial-model.py --activate", report, "--apply")

@@ -109,3 +109,30 @@ El puerto del candidato es ahora 8097: 8095 pertenece a `suu-stt`. Un puerto
 ocupado da un mensaje explícito sin detener al servicio que lo utiliza.
 La coincidencia exacta sigue midiendo formato; revisar manualmente los
 desarrollos matemáticos correctos y las respuestas abiertas.
+
+## Candidato intermedio para Dell de dos núcleos: Qwen3.5-2B Q5
+
+```bash
+python3 deploy/dell-ai/admin/trial-model.py --model qwen-2b --apply
+```
+
+Descarga 1.568.476.256 bytes desde `bartowski/Qwen_Qwen3.5-2B-GGUF`,
+revisión `7d26695454df6de5fbcce2e58681e62dae06ce43`, archivo remoto
+`Qwen_Qwen3.5-2B-Q5_K_M.gguf`. SHA-256:
+`3f50d5f830873c22d33558f69eb2c34aa59858f37e7a58a982aae88bb38ebe88`.
+Se conserva como `~/suu-ai/models/Qwen3.5-2B-Q5_K_M.gguf`.
+Modelo original: https://huggingface.co/Qwen/Qwen3.5-2B
+Cuantización: https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF
+
+Mantiene dos CPU, memoria limitada a 5 GiB y mínimo disponible de 7 GiB,
+puerto de ensayo 8097, razonamiento desactivado, temperatura 0,4, las mismas
+doce preguntas, calentamiento y tres muestras de voz. Así la comparación
+con 4B no cambia simultáneamente prompt, presupuesto o muestreo. El archivo
+menor no garantiza más velocidad ni suficiente calidad: debe medirse.
+
+El informe contiene `model_profile` y el resumen imprime modelo, CPU/hilos
+y peor tiempo hasta primer audio. La activación lee ese perfil del informe y
+verifica su SHA; un informe 4B no autoriza pesos 2B ni viceversa. Informes
+antiguos sin perfil se interpretan como 4B. Por defecto, sin `--model`, sigue
+probando el 4B anterior. No activa ni selecciona un modelo automáticamente;
+permanece la revisión de respuestas abiertas, calidad y demora local.
