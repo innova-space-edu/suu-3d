@@ -1,4 +1,5 @@
 """Private CPU speech-to-text API for SUU. Never logs audio or transcripts."""
+import asyncio
 import io
 import os
 import secrets
@@ -52,6 +53,24 @@ def duration_seconds(payload: bytes) -> float:
         raise HTTPException(status_code=400, detail="Audio inválido") from exc
 
 
+def transcribe_in_worker(audio: bytes, language: str):
+    """Keep Uvicorn responsive to health checks during CPU inference."""
+    duration = duration_seconds(audio)
+    started = time.monotonic()
+    try:
+        segments, _ = MODEL.transcribe(io.BytesIO(audio), language=language,
+                                      beam_size=1, best_of=1,
+                                      condition_on_previous_text=False,
+                                      vad_filter=False, temperature=0)
+        text = " ".join(segment.text.strip() for segment in segments).strip()[:3000]
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="No se pudo transcribir audio") from exc
+    return JSONResponse({"text": text, "language": language,
+                         "audio_seconds": round(duration, 2),
+                         "elapsed_ms": round((time.monotonic() - started) * 1000)},
+                        headers={"Cache-Control": "no-store"})
+
+
 @app.post("/transcribe")
 async def transcribe(request: Request):
     expected = "Bearer " + TOKEN
@@ -73,20 +92,6 @@ async def transcribe(request: Request):
         audio = await request.body()
         if not audio or len(audio) > MAX_AUDIO_BYTES:
             raise HTTPException(status_code=413, detail="Audio vacío o demasiado grande")
-        duration = duration_seconds(audio)
-        started = time.monotonic()
-        try:
-            segments, _ = MODEL.transcribe(io.BytesIO(audio), language=language,
-                                          beam_size=1, best_of=1,
-                                          condition_on_previous_text=False,
-                                          vad_filter=False, temperature=0)
-            # A generator: iteration actually runs transcription.
-            text = " ".join(segment.text.strip() for segment in segments).strip()[:3000]
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail="No se pudo transcribir audio") from exc
-        return JSONResponse({"text": text, "language": language,
-                             "audio_seconds": round(duration, 2),
-                             "elapsed_ms": round((time.monotonic() - started) * 1000)},
-                            headers={"Cache-Control": "no-store"})
+        return await asyncio.to_thread(transcribe_in_worker, audio, language)
     finally:
         LOCK.release()
