@@ -22,6 +22,13 @@ services:
     environment:
       STT_API_TOKEN_FILE: /run/secrets/stt_api_key
       STT_MODEL: base
+      # The container filesystem is read-only. All Hugging Face/Xet files,
+      # including transient download logs, must stay in the persistent writable
+      # /models bind mount; never fall back to /.cache.
+      HOME: /models
+      XDG_CACHE_HOME: /models/.cache
+      HF_HOME: /models/.cache/huggingface
+      HF_XET_CACHE: /models/.cache/huggingface/xet
       HF_HUB_OFFLINE: "1"
       OMP_NUM_THREADS: "2"
     networks: [portal_default]
