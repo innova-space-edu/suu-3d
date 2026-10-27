@@ -119,8 +119,15 @@ export async function chatWithFallback(messages: ChatMessage[], system: string) 
         body: JSON.stringify({
           model: p.model,
           temperature: 0.4,
-          max_tokens: p.id === "dell" ? 180 : 900,
-          messages: [{ role: "system", content: system }, ...messages],
+          // A 0.8B CPU model produces about 10 tokens/s on this Dell.
+          // Cap Dell output so it usually completes before the 22s failover.
+          max_tokens: p.id === "dell" ? 96 : 900,
+          messages: [{
+            role: "system",
+            content: p.id === "dell"
+              ? system + "\nPara esta respuesta de voz, usa español natural y sé breve: 1-3 frases, sin listas, máximo 45 palabras. Responde directamente a lo preguntado."
+              : system,
+          }, ...messages],
           stream: false,
         }),
       });
