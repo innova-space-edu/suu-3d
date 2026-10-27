@@ -7,6 +7,7 @@ const server=readFileSync('deploy/dell-tts/service.py','utf8');
 const compose=readFileSync('deploy/dell-tts/compose.yaml','utf8');
 const consoleUi=readFileSync('components/SuuConsole.tsx','utf8');
 const voiceUi=readFileSync('components/SuuVoiceMode.tsx','utf8');
+const playback=readFileSync('lib/piper-playback.ts','utf8');
 
 test('Piper endpoint enforces SUU sessions, origin and request throttling',()=>{
  for(const term of ['await authorized()','originAllowed(req)','throttle("piper:"','piperConfigured()','CF-Access-Client-Id','CF-Access-Client-Secret','Authorization:'])
@@ -28,9 +29,15 @@ test('Piper is isolated with a private loopback port and read-only model',()=>{
 
 test('both chat and hands-free voice use Piper with lip cues and fallback',()=>{
  for(const ui of [consoleUi,voiceUi]){
-  assert.ok(ui.includes('requestPiperAudio'), 'Piper call missing');
+  assert.ok(ui.includes('playPiperSpeech'), 'Piper segment playback missing');
   assert.ok(ui.includes('lips.audio(player'), 'lip sync missing');
   assert.ok(ui.includes('selectBrowserVoice'), 'local fallback missing');
   assert.ok(ui.includes('ttsLocal'), 'availability gating missing');
  }
+});
+
+test('Piper segments synthesize ahead while audio plays and respect cancellation',()=>{
+ for(const term of ['requestPiperAudio','requestPhrase(phrases[0]','requestPhrase(phrases[part+1]','const next=','await playClip(player,signal)','signal.addEventListener("abort"'])
+  assert.ok(playback.includes(term),term);
+ assert.ok(api.includes('"Server-Timing"'), 'Piper timing header missing');
 });

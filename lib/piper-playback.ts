@@ -1,0 +1,73 @@
+import {requestPiperAudio} from "@/lib/piper-client";
+
+/** Piper accepts short phrases. Start audio on the first phrase, synthesize the
+ * next one while the current clip plays, and never run concurrent CPU jobs.
+ * Payloads stay in memory and the caller owns URL/player cleanup.
+ */
+import {splitPiperSpeech} from "@/lib/piper-chunks.mjs";
+
+export type PiperClipHandler=(player:HTMLAudioElement,url:string,phrase:string,part:number)=>void;
+
+// Deadline applies to each individual phrase, never to the entire reply.
+// Users may listen to several clips while subsequent ones are prepared.
+async function requestPhrase(phrase:string,signal:AbortSignal):Promise<Blob>{
+ const ctl=new AbortController();
+ const cancel=()=>ctl.abort();
+ signal.addEventListener("abort",cancel,{once:true});
+ const timer=setTimeout(()=>ctl.abort(),47000);
+ try{
+  if(signal.aborted)throw new Error("Reproducción cancelada");
+  return await requestPiperAudio(phrase,ctl.signal);
+ }finally{
+  clearTimeout(timer);
+  signal.removeEventListener("abort",cancel);
+ }
+}
+
+async function playClip(player:HTMLAudioElement,signal:AbortSignal):Promise<void>{
+ if(signal.aborted)throw new Error("Reproducción cancelada");
+ await new Promise<void>((resolve,reject)=>{
+  let settled=false;
+  const done=(reason?:unknown)=>{
+   if(settled)return;
+   settled=true;
+   player.removeEventListener("ended",ended);
+   player.removeEventListener("error",failed);
+   signal.removeEventListener("abort",cancel);
+   if(reason)reject(reason);else resolve();
+  };
+  const ended=()=>done();
+  const failed=()=>done(new Error("Audio Piper no pudo reproducirse"));
+  const cancel=()=>{player.pause();done(new Error("Reproducción cancelada"))};
+  player.addEventListener("ended",ended,{once:true});
+  player.addEventListener("error",failed,{once:true});
+  signal.addEventListener("abort",cancel,{once:true});
+  if(signal.aborted){cancel();return}
+  player.play().catch(done);
+ });
+}
+
+export async function playPiperSpeech(text:string,signal:AbortSignal,onClip:PiperClipHandler):Promise<void>{
+ const phrases=splitPiperSpeech(text);
+ if(!phrases.length)return;
+ let current=await requestPhrase(phrases[0],signal);
+ for(let part=0;part<phrases.length;part++){
+  if(signal.aborted)throw new Error("Reproducción cancelada");
+  // Convert rejection into data so an early prefetch failure never leaks an
+  // unhandled promise rejection while the previous clip is still playing.
+  const next=part+1<phrases.length
+   ?requestPhrase(phrases[part+1],signal)
+     .then(blob=>({ok:true as const,blob}),error=>({ok:false as const,error}))
+   :null;
+  const url=URL.createObjectURL(current);
+  const player=new Audio(url);
+  try{onClip(player,url,phrases[part],part)}
+  catch(error){URL.revokeObjectURL(url);throw error}
+  await playClip(player,signal);
+  if(next){
+   const result=await next;
+   if(!result.ok)throw result.error;
+   current=result.blob;
+  }
+ }
+}

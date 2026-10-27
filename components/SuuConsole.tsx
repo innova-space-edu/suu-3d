@@ -1,7 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {selectBrowserVoice} from "@/lib/browser-voice";
-import {requestPiperAudio} from "@/lib/piper-client";
+import {playPiperSpeech} from "@/lib/piper-playback";
 import {preferOnDeviceRecognition} from "@/lib/local-recognition";
 import dynamic from "next/dynamic";
 import {Activity,AudioLines,BrainCircuit,ChevronRight,CircleHelp,Cpu,FileText,LogOut,Mic,MicOff,Orbit,Play,Send,Settings2,Shield,ShieldCheck,Square,Volume2,VolumeX,Waypoints,Maximize2,Minimize2,Camera,CameraOff,Headphones} from "lucide-react";
@@ -57,23 +57,30 @@ export default function SuuConsole(){
   // after any failure it falls back to an installed voice or EDUAI.
   if(config.ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
    const ctl=new AbortController();piperAbort.current=ctl;
-   const timer=window.setTimeout(()=>ctl.abort(),22000);
+   let played=false;
    try{
-    const blob=await requestPiperAudio(text,ctl.signal);
-    if(ticket!==voiceGeneration.current)return;
-    audioUrl.current=URL.createObjectURL(blob);
-    const player=new Audio(audioUrl.current);audioRef.current=player;
-    lips.audio(player,text.slice(0,700),[]);
-    player.onplay=()=>setSpeaking(true);
-    player.onended=stopVoice;player.onerror=stopVoice;
-    void meter.start(player);
-    await player.play();
+    await playPiperSpeech(text,ctl.signal,(player,url,phrase,part)=>{
+     if(ticket!==voiceGeneration.current)throw new Error("Reproducción cancelada");
+     if(audioUrl.current)URL.revokeObjectURL(audioUrl.current);
+     audioUrl.current=url;audioRef.current=player;
+     lips.audio(player,phrase,[]);
+     player.onplay=()=>setSpeaking(true);
+     void meter.start(player);
+     played=true;
+     if(part===0)setNotice(prev=>prev.includes("Piper")||prev.includes("voz de respaldo")?"":prev);
+    });
+    if(ticket===voiceGeneration.current)stopVoice();
     return;
-   }catch{
+   }catch(err){
     if(ticket!==voiceGeneration.current)return;
-    setNotice("Piper Dell no disponible; se utilizará una voz de respaldo.");
+    const reason=err instanceof Error?err.message:"Piper Dell no disponible";
+    if(played){
+     stopVoice();
+     setNotice(reason+"; se interrumpió la voz de Piper.");
+     return;
+    }
+    setNotice(reason+"; se usará voz de respaldo.");
    }finally{
-    clearTimeout(timer);
     if(piperAbort.current===ctl)piperAbort.current=null;
    }
   }
