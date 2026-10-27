@@ -70,3 +70,9 @@ unset KEY
 - La nueva API sirve **texto únicamente**: no instala TTS ni cambia voces, cámara o movimiento de boca.
 - El MCP Dell v12.2 no incluye el contenedor SUU en su catálogo de instalaciones autorizadas. Este paso exige SSH / una actualización de su lista de despliegues autorizados.
 - Para detener solamente este servicio: `sudo docker compose -f compose.yaml down` desde la carpeta.
+
+## Probar un modelo de mayor capacidad
+
+Para comparar y activar Qwen3-4B-Instruct-2507 Q5_K_M conservando el perfil actual,
+consultar [MODEL_TRIAL.md](MODEL_TRIAL.md). El ensayo valida recursos e integridad,
+usa un puerto temporal y separa la comparación de la activación en producción.

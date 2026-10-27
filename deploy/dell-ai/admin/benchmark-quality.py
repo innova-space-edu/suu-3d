@@ -28,6 +28,7 @@ CASES = [
     ("capabilities_open", "¿Qué puedes hacer?", None),
 ]
 PRESETS = {
+    "qwen3-instruct": {"temperature": .7, "top_p": .8, "top_k": 20, "min_p": 0.},
     "current": {"temperature": .4},
     # Official Qwen3.5-0.8B card: non-thinking text tasks. Evaluate; do not
     # activate these settings in production merely because they are published.
@@ -40,12 +41,12 @@ SYSTEM = ("Eres SUU, asistente educativo. Responde en español de forma breve y 
 
 
 def normalized(text):
-    text = unicodedata.normalize("NFD", text.lower())
+    text = unicodedata.normalize("NFD", unicodedata.normalize("NFKC", text).lower())
     text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     return text.strip().rstrip(".").strip()
 
 
-def completion(port, token, prompt, preset):
+def completion(port, token, prompt, preset, on_phrase=None):
     data = {"model": "suu-local", "stream": True, "max_tokens": 96,
             "messages": [{"role": "system", "content": SYSTEM},
                          {"role": "user", "content": prompt}], **preset}
@@ -56,6 +57,7 @@ def completion(port, token, prompt, preset):
     first = phrase = None
     content = ""
     finished = False
+    finish_reason = None
     with urllib.request.urlopen(request, timeout=120) as response:
         for line in response:
             if not line.startswith(b"data:"):
@@ -79,14 +81,21 @@ def completion(port, token, prompt, preset):
                 content += delta
                 if phrase is None and (re.search(r".{20,}[.!?;:]\s", content) or len(content) > 60):
                     phrase = elapsed
+                    if on_phrase:
+                        front = content[:60]
+                        cut = front.rfind(" ")
+                        on_phrase(front[:cut] if cut >= 25 else front)
                 if len(content) > 4500:
                     raise ValueError("Output too long")
             if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
                 finished = True
     elapsed = time.perf_counter() - started
     if not finished or not content.strip():
         raise ValueError("Incomplete or empty stream")
-    return {"answer": content, "first_text_seconds": round(first, 3),
+    if phrase is None and on_phrase:
+        on_phrase(content)
+    return {"answer": content, "finish_reason": finish_reason, "first_text_seconds": round(first, 3),
             "first_phrase_seconds": round(phrase if phrase is not None else elapsed, 3),
             "total_seconds": round(elapsed, 3)}
 
@@ -94,12 +103,12 @@ def completion(port, token, prompt, preset):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8094)
-    parser.add_argument("--preset", choices=["current", "qwen-text", "both"], default="both")
+    parser.add_argument("--preset", choices=["current", "qwen-text", "qwen3-instruct", "both"], default="both")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("Invalid local port")
     token = (Path.home() / "suu-ai/secrets/suu_api_key.txt").read_text().strip()
-    presets = PRESETS if args.preset == "both" else {args.preset: PRESETS[args.preset]}
+    presets = {key: PRESETS[key] for key in ("current", "qwen-text")} if args.preset == "both" else {args.preset: PRESETS[args.preset]}
     rows = []
     for preset, settings in presets.items():
         for label, prompt, expected in CASES:

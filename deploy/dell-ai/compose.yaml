@@ -1,7 +1,7 @@
 services:
   suu-llm:
     container_name: suu-llm
-    image: ghcr.io/ggml-org/llama.cpp:server
+    image: "${SUU_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}"
     restart: unless-stopped
     init: true
     # Compose uses a local read-only bind for the API key. Its host file is
@@ -12,7 +12,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     cpus: "2.0"
-    mem_limit: 3g
+    mem_limit: "${SUU_LLM_MEMORY:-3g}"
     pids_limit: 150
     ports:
       - "127.0.0.1:8094:8080"
@@ -25,7 +25,7 @@ services:
       - "--port"
       - "8080"
       - "--model"
-      - "/models/Qwen3.5-0.8B-Q4_K_M.gguf"
+      - "/models/${SUU_MODEL_FILE:-Qwen3.5-0.8B-Q4_K_M.gguf}"
       - "--alias"
       - "suu-local"
       - "--ctx-size"

@@ -137,3 +137,23 @@ test('caller cancellation propagates upstream and prevents provider fallback',()
  await assert.rejects(chatWithFallback([{role:'user',content:'hola'}],'test',{signal:ctl.signal,onDelta:()=>{}}),/cancelada/);
  assert.equal(calls,1);
 }));
+
+test('Dell streaming extends only on progress and stays inside a 48s response budget',()=>isolated(async()=>{
+ Object.assign(process.env,{SUU_DELL_API_BASE_URL:'https://private-ai.example/v1',SUU_DELL_API_TOKEN:'test'});
+ const realNow=Date.now,realSet=globalThis.setTimeout,realClear=globalThis.clearTimeout;
+ const delays=[];let time=0,step=0;
+ Date.now=()=>time;
+ globalThis.setTimeout=(_fn,ms)=>{delays.push(ms);return delays.length};
+ globalThis.clearTimeout=()=>{};
+ try{
+  globalThis.fetch=async()=>new Response(new ReadableStream({pull(controller){
+   if(step++===0){time=5000;controller.enqueue(new TextEncoder().encode(sseEvent('Primera frase. ')))}
+   else {time=47000;controller.enqueue(new TextEncoder().encode(sseEvent('Final.','stop')));controller.close()}
+  }},{highWaterMark:0}),{headers:{'content-type':'text/event-stream'}});
+  const result=await chatWithFallback([{role:'user',content:'hola'}],'test',{onDelta:()=>{}});
+  assert.equal(result.reply,'Primera frase. Final.');
+  assert.equal(delays[0],22000);
+  assert.ok(delays.includes(12000));
+  assert.equal(delays.at(-1),1000);
+ }finally{Date.now=realNow;globalThis.setTimeout=realSet;globalThis.clearTimeout=realClear}
+}));
