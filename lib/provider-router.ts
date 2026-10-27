@@ -144,9 +144,11 @@ export async function chatWithFallback(messages: ChatMessage[], system: string, 
     if (remaining < 2000) break;
     if (options.signal?.aborted) throw new Error("Conversación cancelada");
     let emitted = false, firstTextMs: number | undefined;
+    let progress = () => {};
     const emit = (text: string) => {
       emitted = true;
       firstTextMs ??= Date.now() - start;
+      progress();
       options.onDelta?.(text);
     };
     const controller = new AbortController();
@@ -154,7 +156,14 @@ export async function chatWithFallback(messages: ChatMessage[], system: string, 
     options.signal?.addEventListener("abort", cancel, {once: true});
     if (options.signal?.aborted) cancel();
     const timeout = Math.min(p.id === "dell" ? 22000 : 10500, remaining - 1200);
-    const timer = setTimeout(() => controller.abort(), timeout);
+    let timer = setTimeout(() => controller.abort(), timeout);
+    // Keep the initial Dell deadline, but allow a larger CPU model to finish
+    // while it is making progress. Never exceed the API's total time budget.
+    const progressDeadline = Date.now() + Math.min(48000, remaining - 1200);
+    if (p.id === "dell" && options.onDelta) progress = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), Math.max(1, Math.min(12000, progressDeadline - Date.now())));
+    };
     try {
       const response = await fetch(p.url + "/chat/completions", {
         method: "POST",

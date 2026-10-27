@@ -1,0 +1,106 @@
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("trial", Path(__file__).with_name("trial-model.py"))
+trial = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(trial)
+
+
+def scored(correct):
+    rows = [{"case": case, "exact_match": index < correct} for index, (case, _, expected) in
+            enumerate((row for row in trial.quality.CASES if row[2] is not None))]
+    return rows
+
+
+class TrialTests(unittest.TestCase):
+    def test_resource_gate_preserves_host_headroom(self):
+        with self.assertRaises(ValueError):
+            trial.require_memory(6 * trial.GIB)
+        trial.require_memory(7 * trial.GIB)
+
+    def test_profile_preserves_owner_and_other_configuration(self):
+        before = "SUU_RUN_UID=1000\nSUU_RUN_GID=1000\nCUSTOM=keep\nSUU_MODEL_FILE=old.gguf\n"
+        digest = "ghcr.io/ggml-org/llama.cpp@sha256:" + "a" * 64
+        after = trial.new_profile(before, digest)
+        self.assertIn("SUU_RUN_UID=1000\n", after)
+        self.assertIn("CUSTOM=keep\n", after)
+        self.assertIn("SUU_LLM_MEMORY=5g\n", after)
+        self.assertEqual(after.count("SUU_MODEL_FILE="), 1)
+        with self.assertRaises(ValueError):
+            trial.new_profile(before, "untrusted/image:latest")
+
+    def test_duplicate_or_missing_tests_cannot_pass_quality_gate(self):
+        self.assertEqual(trial.score(scored(9)), 9)
+        with self.assertRaises(ValueError):
+            trial.score(scored(10)[1:])
+        with self.assertRaises(ValueError):
+            trial.score(scored(10) + scored(10))
+
+    def test_unicode_chemical_subscripts_do_not_fail_exact_matching(self):
+        self.assertEqual(trial.quality.normalized("H₂O."), "h2o")
+        self.assertEqual(trial.quality.normalized("París."), "paris")
+
+    def test_failed_activation_restores_both_original_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            target = root / "installed"
+            (target / "models").mkdir(parents=True)
+            source = root / "repo"
+            (source / "admin").mkdir(parents=True)
+            (source / "compose.yaml").write_text("new compose")
+            original_compose, original_env = "old compose", "SUU_RUN_UID=1000\nCUSTOM=preserve\n"
+            (target / "compose.yaml").write_text(original_compose)
+            (target / ".env").write_text(original_env)
+            model = target / "models" / trial.MODEL
+            model.write_bytes(b"test-model")
+            model_sha = hashlib.sha256(b"test-model").hexdigest()
+            report = target / "report.json"
+            report.write_text(json.dumps({"candidate_sha": model_sha, "preset": "current", "baseline": scored(4), "candidate": scored(10),
+                                          "voice_probe": {"model_total_seconds": 8, "piper_rtf": .3},
+                                          "image_id": "tested-image", "image_digest": "ghcr.io/ggml-org/llama.cpp@sha256:" + "a" * 64}))
+            old_hash = hashlib.sha256(original_compose.encode()).hexdigest()
+            calls = []
+            def restart(_cmd):
+                calls.append((target / "compose.yaml").read_text())
+                if len(calls) == 1:
+                    raise RuntimeError("failed candidate startup")
+            with patch.object(trial, "TARGET", target), patch.object(trial, "ROOT", source / "admin"), \
+                 patch.object(trial, "MODEL_SHA", model_sha), patch.object(trial, "ORIGINAL_COMPOSE_SHA", old_hash), \
+                 patch.object(trial, "memory_available", return_value=8 * trial.GIB), \
+                 patch.object(trial, "docker", return_value="tested-image"), \
+                 patch.object(trial, "compose_up", side_effect=restart), patch.object(trial, "wait_ready"):
+                with self.assertRaises(RuntimeError):
+                    trial.activate([], report, "private-key-never-printed")
+            self.assertEqual((target / ".env").read_text(), original_env)
+            self.assertEqual((target / "compose.yaml").read_text(), original_compose)
+            self.assertEqual(calls, ["new compose", "old compose"])
+
+    def test_temporary_container_is_removed_after_readiness_failure(self):
+        with patch.object(trial, "docker", return_value="temporary-id") as launch, \
+             patch.object(trial, "wait_ready", side_effect=RuntimeError("not ready")), \
+             patch.object(trial.subprocess, "run") as cleanup:
+            with self.assertRaises(RuntimeError):
+                with trial.candidate_container(["docker"], "tested-image", "private-key"):
+                    self.fail("failed container must not be yielded")
+            cleanup.assert_called_once()
+            self.assertEqual(cleanup.call_args.args[0], ["docker", "rm", "-f", "temporary-id"])
+            self.assertIn("127.0.0.1:8095:8080", launch.call_args.args)
+            self.assertNotIn("private-key", launch.call_args.args)
+
+    def test_bad_quality_never_reaches_docker_or_writes_profile(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = Path(folder) / "report.json"
+            report.write_text(json.dumps({"candidate_sha": trial.MODEL_SHA, "preset": "current", "baseline": scored(4), "candidate": scored(6)}))
+            with patch.object(trial, "docker") as docker:
+                with self.assertRaises(ValueError):
+                    trial.activate([], report, "private-key")
+                docker.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
