@@ -25,6 +25,7 @@ export async function POST(req:NextRequest){
  const text=typeof data==="object"&&data!==null&&"text" in data?(data as {text?:unknown}).text:undefined;
  if(typeof text!=="string"||text.trim().length<1||text.length>MAX_INPUT_CHARS)
   return NextResponse.json({error:"Texto de voz inválido"},{status:400});
+ const startedAt=performance.now();
  const controller=new AbortController();
  const timer=setTimeout(()=>controller.abort(),43000);
  try{
@@ -64,7 +65,8 @@ export async function POST(req:NextRequest){
   }
   return new NextResponse(audio,{
    headers:{"Content-Type":"audio/wav","Cache-Control":"private, no-store",
-    "X-Suu-Voice-Provider":"dell-piper"}
+    "X-Suu-Voice-Provider":"dell-piper",
+    "Server-Timing":`piper-upstream;dur=${Math.round(performance.now()-startedAt)}`}
   });
  }catch(err){
   const reason=controller.signal.aborted?"upstream_timeout":"upstream_network";
