@@ -4,6 +4,10 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server
     restart: unless-stopped
     init: true
+    # Compose uses a local read-only bind for the API key. Its host file is
+    # mode 0600, so llama.cpp must run as the actual host file owner.
+    # bootstrap-suu.sh writes these non-secret IDs to ~/suu-ai/.env.
+    user: "${SUU_RUN_UID:?run bootstrap-suu.sh --apply}:${SUU_RUN_GID:?run bootstrap-suu.sh --apply}"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -14,8 +18,7 @@ services:
       - "127.0.0.1:8094:8080"
     volumes:
       - ./models:/models:ro
-    secrets:
-      - suu_api_key
+      - ./secrets/suu_api_key.txt:/run/secrets/suu_api_key:ro
     command:
       - "--host"
       - "0.0.0.0"
@@ -38,10 +41,6 @@ services:
       - "/run/secrets/suu_api_key"
     networks:
       - portal_default
-
-secrets:
-  suu_api_key:
-    file: ./secrets/suu_api_key.txt
 
 networks:
   portal_default:
