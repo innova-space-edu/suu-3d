@@ -21,9 +21,19 @@ target="${2:-$HOME/suu-ai}"
 command -v docker >/dev/null
 command -v curl >/dev/null
 command -v openssl >/dev/null
-docker info >/dev/null
-docker compose version >/dev/null
-docker network inspect portal_default >/dev/null
+# Docker socket access is privileged. Prefer owner SSH + sudo; do NOT add
+# the user to group docker (that would grant root-equivalent access).
+if docker info >/dev/null 2>&1; then
+  docker_cmd=(docker)
+else
+  command -v sudo >/dev/null || { echo "Docker requiere sudo y no está instalado"; exit 1; }
+  echo "Docker necesita sudo. Se pedirá la contraseña del propietario."
+  sudo -v
+  sudo docker info >/dev/null || { echo "No se puede consultar Docker ni con sudo"; exit 1; }
+  docker_cmd=(sudo docker)
+fi
+"${docker_cmd[@]}" compose version >/dev/null
+"${docker_cmd[@]}" network inspect portal_default >/dev/null
 [[ -f "$source_dir/compose.yaml" ]] || { echo "Falta compose.yaml"; exit 1; }
 [[ ! -e "$target/compose.yaml" || "$(sha256sum "$target/compose.yaml" | cut -d' ' -f1)" == "$(sha256sum "$source_dir/compose.yaml" | cut -d' ' -f1)" ]] || {
   echo "Ya existe un Compose diferente en destino; no se sobrescribirá"; exit 1;
@@ -52,7 +62,7 @@ model="$target/models/Qwen3.5-0.8B-Q4_K_M.gguf"
 if [[ ! -s "$model" ]]; then
   [[ ! -e "$model" ]] || { echo "Modelo vacío; abortado"; exit 1; }
   curl --fail --location --retry 3 --connect-timeout 20 --max-time 600 \
-    "https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf" \
+    "https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/167243f271bba42ffec2e50e982cb3614d6a0b05/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf" \
     --output "$model.partial"
   [[ "$(stat -c%s "$model.partial")" -gt 400000000 ]] || {
     rm -f -- "$model.partial"
@@ -68,8 +78,8 @@ actual_sha="$(sha256sum "$model" | awk '{print $1}')"
 echo "SHA256 del GGUF verificado: $actual_sha"
 (
   cd "$target"
-  docker compose -f compose.yaml config --quiet
-  docker compose -f compose.yaml up -d --no-deps suu-llm
+  "${docker_cmd[@]}" compose -f compose.yaml config --quiet
+  "${docker_cmd[@]}" compose -f compose.yaml up -d --no-deps suu-llm
 )
-echo "Servicio solicitado. Validar con docker logs suu-llm y consulta /v1/chat/completions."
+echo "Servicio solicitado. Validar con sudo docker logs suu-llm y consulta /v1/chat/completions."
 echo "No se modificó la política MCP ni se creó Cloudflare Access."

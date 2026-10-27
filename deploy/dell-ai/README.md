@@ -20,6 +20,16 @@ con el esquema real del agente; no se habilita una terminal root genérica.
 
 ## Preparación en el Dell (SSH con autorización del propietario)
 
+**Recomendado:** utilizar `bash admin/bootstrap-suu.sh --dry-run` y después
+`bash admin/bootstrap-suu.sh --apply`. Esta versión detecta si el usuario no
+puede acceder al socket Docker y usa `sudo docker`, sin modificar la
+pertenencia al grupo `docker`. Corrige además el nombre real del GGUF remoto.
+Si el MCP no responde tras reiniciar el agente, consultar el diagnóstico en
+[admin/README.md](admin/README.md), y no modificar una ruta de política
+inventada.
+
+La alternativa manual es:
+
 Copiar la carpeta `deploy/dell-ai` desde este repositorio al Dell, manteniendo `compose.yaml`.
 En esa carpeta:
 
@@ -28,16 +38,16 @@ mkdir -p models secrets
 chmod 700 secrets
 # descargar solamente el GGUF; verificar el origen y el espacio libre
 curl --fail --location --retry 3 \
-  "https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf" \
+  "https://huggingface.co/bartowski/Qwen_Qwen3.5-0.8B-GGUF/resolve/167243f271bba42ffec2e50e982cb3614d6a0b05/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf" \
   --output models/Qwen3.5-0.8B-Q4_K_M.gguf
 
 # misma clave que SUU_DELL_API_TOKEN en Vercel; NO guardarla en Git
 openssl rand -hex 32 > secrets/suu_api_key.txt
 chmod 600 secrets/suu_api_key.txt
-docker network inspect portal_default >/dev/null
-docker compose -f compose.yaml config
-docker compose -f compose.yaml up -d
-docker compose -f compose.yaml logs --tail=60 suu-llm
+sudo docker network inspect portal_default >/dev/null
+sudo docker compose -f compose.yaml config
+sudo docker compose -f compose.yaml up -d
+sudo docker compose -f compose.yaml logs --tail=60 suu-llm
 ```
 
 Prueba desde el propio Dell (sustituir temporalmente TOKEN desde el archivo sin imprimirlo):
@@ -66,4 +76,4 @@ unset KEY
 - No enviar directamente desde el navegador las credenciales ni el endpoint de inferencia.
 - La nueva API sirve **texto únicamente**: no instala TTS ni cambia voces, cámara o movimiento de boca.
 - El MCP Dell v12.2 no incluye el contenedor SUU en su catálogo de instalaciones autorizadas. Este paso exige SSH / una actualización de su lista de despliegues autorizados.
-- Para detener solamente este servicio: `docker compose -f compose.yaml down` desde la carpeta.
+- Para detener solamente este servicio: `sudo docker compose -f compose.yaml down` desde la carpeta.
