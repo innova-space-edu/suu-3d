@@ -1,6 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {selectBrowserVoice} from "@/lib/browser-voice";
+import {preferOnDeviceRecognition} from "@/lib/local-recognition";
 import dynamic from "next/dynamic";
 import {Activity,AudioLines,BrainCircuit,ChevronRight,CircleHelp,Cpu,FileText,LogOut,Mic,MicOff,Orbit,Play,Send,Settings2,Shield,ShieldCheck,Square,Volume2,VolumeX,Waypoints,Maximize2,Minimize2,Camera,CameraOff,Headphones} from "lucide-react";
 import type {ChatMessage,Domain} from "@/lib/providers";
@@ -19,9 +20,9 @@ type ProviderInfo={id:string;name:string;model:string;configured:boolean};
 type Config={authenticated:boolean;securityReady:boolean;llm:boolean;voice:boolean;voicePremium?:boolean;livekit:boolean;providers?:ProviderInfo[];bridges:Record<string,boolean>};
 const defaultConfig:Config={authenticated:false,securityReady:false,llm:false,voice:false,livekit:false,bridges:{}};
 const welcome:ChatMessage={role:"assistant",content:"Hola. Soy SUU, la interfaz holográfica de Innova Space Education. Puedo conversar, ayudarte a investigar y presentar simulaciones. Las conexiones externas solo funcionan cuando están autorizadas y configuradas."};
-type SpeechResult={results:Record<number,Record<number,{transcript:string}>>};type SpeechRecognitionLike={lang:string;interimResults:boolean;continuous:boolean;onresult:((e:SpeechResult)=>void)|null;onerror:(()=>void)|null;onend:(()=>void)|null;start:(track?:MediaStreamTrack)=>void;stop:()=>void};type SpeechCtor=new()=>SpeechRecognitionLike;
+type SpeechResult={results:Record<number,Record<number,{transcript:string}>>};type SpeechRecognitionLike={processLocally?:boolean;lang:string;interimResults:boolean;continuous:boolean;onresult:((e:SpeechResult)=>void)|null;onerror:(()=>void)|null;onend:(()=>void)|null;start:(track?:MediaStreamTrack)=>void;stop:()=>void};type SpeechCtor=new()=>SpeechRecognitionLike;
 export default function SuuConsole(){
- const [config,setConfig]=useState<Config>(defaultConfig),[booting,setBooting]=useState(true),[code,setCode]=useState(""),[loginError,setLoginError]=useState(""),[demo,setDemo]=useState(false),[domain,setDomain]=useState<Domain>("general"),[messages,setMessages]=useState<ChatMessage[]>([welcome]),[draft,setDraft]=useState(""),[sending,setSending]=useState(false),[notice,setNotice]=useState(""),[speaking,setSpeaking]=useState(false),[listening,setListening]=useState(false),[energy,setEnergy]=useState(.04),[sound,setSound]=useState(true),[voiceId,setVoiceId]=useState("es-MX-DaliaNeural"),[voices,setVoices]=useState<Voice[]>([]),[browserVoices,setBrowserVoices]=useState<SpeechSynthesisVoice[]>([]),[usedProvider,setUsedProvider]=useState(""),[language,setLanguage]=useState("es-CL"),[quality,setQuality]=useState<"eco"|"high">("high"),[solid,setSolid]=useState(false),[scene,setScene]=useState<"avatar"|"solar">("avatar"),[settings,setSettings]=useState(false),[chatOpen,setChatOpen]=useState(true);
+ const [config,setConfig]=useState<Config>(defaultConfig),[booting,setBooting]=useState(true),[code,setCode]=useState(""),[loginError,setLoginError]=useState(""),[demo,setDemo]=useState(false),[domain,setDomain]=useState<Domain>("general"),[messages,setMessages]=useState<ChatMessage[]>([welcome]),[draft,setDraft]=useState(""),[sending,setSending]=useState(false),[notice,setNotice]=useState(""),[speaking,setSpeaking]=useState(false),[listening,setListening]=useState(false),[energy,setEnergy]=useState(.04),[sound,setSound]=useState(true),[voiceId,setVoiceId]=useState("browser:preferred"),[voices,setVoices]=useState<Voice[]>([]),[browserVoices,setBrowserVoices]=useState<SpeechSynthesisVoice[]>([]),[usedProvider,setUsedProvider]=useState(""),[language,setLanguage]=useState("es-CL"),[quality,setQuality]=useState<"eco"|"high">("high"),[solid,setSolid]=useState(false),[scene,setScene]=useState<"avatar"|"solar">("avatar"),[settings,setSettings]=useState(false),[chatOpen,setChatOpen]=useState(true);
  const [noiseReduction,setNoiseReduction]=useState(true);
  const microphone=useMicrophoneInput();
  const face=useSuuFaceTracking();
@@ -43,7 +44,40 @@ export default function SuuConsole(){
  useEffect(()=>{scroll.current?.scrollTo({top:scroll.current.scrollHeight,behavior:"smooth"})},[messages,sending]);
  const stopVoice=useCallback(()=>{voiceGeneration.current++;lips.stop();meter.stop();speechSynthesis?.cancel();if(speechTimer.current)clearInterval(speechTimer.current);speechTimer.current=null;if(audioRef.current){audioRef.current.onended=null;audioRef.current.onerror=null;audioRef.current.pause();audioRef.current.src="";audioRef.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}setSpeaking(false);setEnergy(0)},[meter.stop,lips.stop]);
  useEffect(()=>()=>{recognition.current?.stop();microphone.stop();stopVoice()},[stopVoice,microphone.stop]);
- const synthesize=async(text:string)=>{const selectedLocale=voices.find(v=>v.id===voiceId)?.locale;const speechLocale=(selectedLocale&&selectedLocale!=="multi"?selectedLocale:browserVoices.find(v=>"browser:"+v.voiceURI===voiceId)?.lang)||voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0]||language;text=spokenText(text,speechLocale);if(!sound||!text)return;stopVoice();const ticket=voiceGeneration.current;if(!voiceId.startsWith("browser:")&&config.voice){try{const r=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1800),voiceId,language:speechLocale,timings:true})});if(!r.ok)throw new Error("La voz premium no está disponible");const {blob,words}=await readVoiceResponse(r);if(ticket!==voiceGeneration.current)return;audioUrl.current=URL.createObjectURL(blob);const a=new Audio(audioUrl.current);audioRef.current=a;lips.audio(a,text.slice(0,1800),words);a.onplay=()=>setSpeaking(true);a.onended=stopVoice;a.onerror=stopVoice;void meter.start(a);await a.play();return}catch{if(ticket!==voiceGeneration.current)return;stopVoice();setNotice("Se usará la voz del navegador.")}}if(typeof window!=="undefined"&&"speechSynthesis" in window){const utterance=new SpeechSynthesisUtterance(spokenText(text.slice(0,2500),speechLocale));utterance.lang=speechLocale;const exact=voiceId.startsWith("browser:")?browserVoices.find(v=>v.voiceURI===voiceId.slice(8)):undefined;utterance.voice=exact||selectBrowserVoice(browserVoices,voiceId,speechLocale);utterance.rate=1.02;utterance.onstart=()=>{setSpeaking(true);let phase=0;speechTimer.current=setInterval(()=>{phase+=.8;setEnergy(.12+.32*Math.abs(Math.sin(phase)))},90)};utterance.onend=stopVoice;utterance.onerror=stopVoice;lips.utterance(utterance);window.speechSynthesis.speak(utterance)}};
+ const synthesize=async(text:string)=>{
+  const selectedLocale=voices.find(v=>v.id===voiceId)?.locale;
+  const speechLocale=(selectedLocale&&selectedLocale!=="multi"?selectedLocale:browserVoices.find(v=>"browser:"+v.voiceURI===voiceId)?.lang)||voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0]||language;
+  text=spokenText(text,speechLocale);if(!sound||!text)return;
+  stopVoice();const ticket=voiceGeneration.current;
+  // Automatic mode is local first. A cloud voice is used only if there is no
+  // installed Spanish voice. "browser:auto" is strictly device-only.
+  const installed=selectBrowserVoice(browserVoices,voiceId,speechLocale);
+  const canRemote=!voiceId.startsWith("browser:")||(voiceId==="browser:preferred"&&!installed);
+  if(canRemote&&config.voice){
+   try{
+    const remoteId=voiceId==="browser:preferred"?"es-MX-DaliaNeural":voiceId;
+    const r=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1800),voiceId:remoteId,language:speechLocale,timings:true})});
+    if(!r.ok)throw new Error("Voz en línea no disponible");
+    const {blob,words}=await readVoiceResponse(r);
+    if(ticket!==voiceGeneration.current)return;
+    audioUrl.current=URL.createObjectURL(blob);const a=new Audio(audioUrl.current);audioRef.current=a;
+    lips.audio(a,text.slice(0,1800),words);
+    a.onplay=()=>setSpeaking(true);a.onended=stopVoice;a.onerror=stopVoice;
+    void meter.start(a);await a.play();return;
+   }catch{if(ticket!==voiceGeneration.current)return;stopVoice();setNotice("Voz de red no disponible; se intentará una voz instalada.")}
+  }
+  if(typeof window==="undefined"||!("speechSynthesis" in window))return;
+  const browserVoice=selectBrowserVoice(window.speechSynthesis.getVoices(),voiceId,speechLocale);
+  if(!browserVoice){
+   setNotice("No hay voz instalada para este idioma. Instala una voz en el sistema o selecciona una voz EDUAI en Configuración.");
+   return;
+  }
+  const utterance=new SpeechSynthesisUtterance(text.slice(0,2500));
+  utterance.lang=speechLocale;utterance.voice=browserVoice;utterance.rate=1.02;
+  utterance.onstart=()=>{setSpeaking(true);let phase=0;speechTimer.current=setInterval(()=>{phase+=.8;setEnergy(.12+.32*Math.abs(Math.sin(phase)))},90)};
+  utterance.onend=stopVoice;utterance.onerror=()=>{stopVoice();setNotice("La voz del dispositivo no pudo reproducirse.")};
+  lips.utterance(utterance);window.speechSynthesis.speak(utterance);
+ };
  const send=async(value=draft,selected=domain)=>{const text=value.trim();if(!text||sending)return;if(!config.authenticated){setNotice("Debes iniciar sesión antes de conversar.");return}stopVoice();setDraft("");const history=[...messages,{role:"user" as const,content:text}].slice(-16);setMessages(history);setSending(true);try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history,domain:selected})});const data=await r.json();if(!r.ok)throw new Error(data.error||"No disponible");const reply=String(data.reply||"");setMessages([...history,{role:"assistant",content:reply}]);setUsedProvider(data.provider?(data.provider+(data.fallbackUsed?" · respaldo activo":"")):"");if(data.bridgeWarning)setNotice(data.bridgeWarning);if(reply)void synthesize(reply)}catch(e){setNotice(e instanceof Error?e.message:"No se pudo responder")}finally{setSending(false)}};
  const login=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch("/api/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})});const data=await r.json();if(!r.ok){setLoginError(data.error||"Acceso denegado");return}setCode("");setDemo(false);await load()};
  const logout=async()=>{stopVoice();await fetch("/api/session",{method:"DELETE"});setMessages([welcome]);setDemo(false);await load()};
@@ -52,6 +86,7 @@ export default function SuuConsole(){
   const w=window as Window & {SpeechRecognition?:SpeechCtor;webkitSpeechRecognition?:SpeechCtor};const C=w.SpeechRecognition||w.webkitSpeechRecognition;
   if(!C){setNotice("El navegador no ofrece reconocimiento de voz. Prueba Chrome o Edge.");return}
   const rec=new C();rec.lang=language;rec.interimResults=false;rec.continuous=false;
+   await preferOnDeviceRecognition(C,rec,language);
   rec.onresult=e=>{const text=e.results[0]?.[0]?.transcript||"";if(text)setDraft(d=>[d,text].filter(Boolean).join(" "))};
   rec.onerror=()=>{microphone.stop();setListening(false);setNotice("No se pudo reconocer la voz. Revisa el permiso del micrófono.")};
   rec.onend=()=>{microphone.stop();setListening(false)};recognition.current=rec;setListening(true);
@@ -75,14 +110,15 @@ export default function SuuConsole(){
   {voiceOnly&&config.authenticated&&<SuuVoiceMode onClose={()=>setVoiceOnly(false)} onTurn={(user,reply,provider)=>{setMessages(prev=>[...prev,{role:"user" as const,content:user},{role:"assistant" as const,content:reply}].slice(-16));setUsedProvider(provider)}} noiseReduction={noiseReduction} initial={messages} domain={domain} language={language} voiceId={voiceId} quality={quality} solid={solid} tracking={face.motion} cameraActive={face.status==="tracking"}/>}
   {fairMode&&config.authenticated&&<SuuFairMode onClose={()=>setFairMode(false)} onTurn={(user,reply,provider)=>{setMessages(prev=>[...prev,{role:"user" as const,content:user},{role:"assistant" as const,content:reply}].slice(-16));setUsedProvider(provider)}} initial={[]} noiseReduction={noiseReduction} language={language} voiceId={voiceId} quality={quality} solid={solid}/>}
   {settings&&<div className="modalShade" onMouseDown={e=>{if(e.target===e.currentTarget)setSettings(false)}}><div className="modalCard" role="dialog" aria-modal="true" aria-label="Configuración SUU"><div className="modalHeader"><h2>Configuración de SUU</h2><button onClick={()=>setSettings(false)} aria-label="Cerrar ajustes">×</button></div><label>Calidad gráfica<select value={quality} onChange={e=>setQuality(e.target.value as "eco"|"high")}><option value="high">Alta calidad</option><option value="eco">Economía de recursos</option></select></label>{microphone.headphonesActive&&<><label>Reducir ruido de fondo<input type="checkbox" checked={noiseReduction} onChange={e=>setNoiseReduction(e.target.checked)}/></label><p className="muted">Disponible con auriculares detectados como salida predeterminada. Se aplica en la próxima activación del micrófono. Al desconectarlos, se desactiva. Si pierde palabras, puedes apagarlo.</p></>}<label>Idioma<select value={language} onChange={e=>setLanguage(e.target.value)}><option value="es-CL">Español Chile</option><option value="en-US">English</option><option value="pt-BR">Português</option><option value="fr-FR">Français</option></select></label><label>Voz de SUU<select aria-label="Voz de SUU" value={voiceId} onChange={e=>setVoiceId(e.target.value)}>
- <option value="browser:auto">Voz del dispositivo · sin solicitudes de voz a SUU</option>
+ <option value="browser:preferred">Automática · voz local primero, respaldo EDUAI si no hay</option>
+ <option value="browser:auto">Solo instalada en el dispositivo · sin TTS externo</option>
  <optgroup label="Voces estándar de EDUAI">{voices.filter(v=>v.source==="eduai").map(v=><option key={v.id} value={v.id}>{v.label}</option>)}</optgroup>
  {voices.some(v=>v.source==="elevenlabs")&&<optgroup label="Voz premium">{voices.filter(v=>v.source==="elevenlabs").map(v=><option key={v.id} value={v.id}>{v.label}</option>)}</optgroup>}
- <optgroup label="Voces de este navegador">{browserVoices.map(v=><option key={v.voiceURI} value={"browser:"+v.voiceURI}>{v.name} · {v.lang}</option>)}</optgroup>
- </select></label><p className="muted">La voz del dispositivo conserva la animación de labios y evita los servicios de voz de SUU. Prioriza voces instaladas; otras voces del navegador pueden necesitar conexión. La sincronización usa eventos por palabra cuando están disponibles y una estimación como respaldo.</p>
+ <optgroup label="Voces de este navegador">{browserVoices.map(v=><option key={v.voiceURI} value={"browser:"+v.voiceURI}>{v.name} · {v.lang} · {v.localService?"instalada":"en línea"}</option>)}</optgroup>
+ </select></label><p className="muted">La voz automática usa primero voces instaladas y evita /api/voice. Solo usa EDUAI si no hay una voz compatible. El modo «Solo instalada» nunca solicita TTS externo. El reconocimiento del micrófono se realiza localmente cuando el navegador y su paquete de idioma lo permiten; en otros casos el navegador puede usar un servicio remoto. La sincronización usa eventos por palabra cuando están disponibles y una estimación como respaldo.</p>
  <label>Motor principal <span style={{fontSize:11,color:"#9ac8df"}}>{config.providers?.find(p=>p.configured)?.name||"Sin configurar"}</span></label>
  <div className="providerStatusList" aria-label="Proveedores de IA">{config.providers?.map(p=><div key={p.id}><strong>{p.name}</strong><span>{p.configured?"Configurado · sin verificar":"Sin clave"}</span>{p.model&&<small>{p.model}</small>}</div>)}</div>
- <p className="muted">Prioridad IA: Groq → SambaNova → OpenRouter → Gemini. Las voces clonadas privadas de EDUAI requieren autorización individual y autenticación MFA, por lo que no se copian automáticamente.</p><label>Superficie 3D sólida<input type="checkbox" checked={solid} onChange={e=>setSolid(e.target.checked)}/></label>{config.authenticated&&<button className="logout" onClick={()=>void logout()}><LogOut size={16}/> Cerrar sesión</button>}<p className="muted">Las credenciales de servicios externos se configuran en Vercel y nunca se exponen en el navegador.</p></div></div>}
+ <p className="muted">Prioridad IA: Dell (Qwen CPU) → Groq → SambaNova → OpenRouter → Gemini. Las voces clonadas privadas de EDUAI requieren autorización individual y autenticación MFA, por lo que no se copian automáticamente.</p><label>Superficie 3D sólida<input type="checkbox" checked={solid} onChange={e=>setSolid(e.target.checked)}/></label>{config.authenticated&&<button className="logout" onClick={()=>void logout()}><LogOut size={16}/> Cerrar sesión</button>}<p className="muted">Las credenciales de servicios externos se configuran en Vercel y nunca se exponen en el navegador.</p></div></div>}
   {!booting&&!config.authenticated&&!demo&&<div className="modalShade authShade"><section className="loginCard"><div className="loginIcon"><BrainCircuit size={33}/></div><small>INNOVA SPACE EDUCATION</small><h2>Iniciar interfaz SUU</h2><p>Experiencia holográfica 3D. La conversación con IA requiere un código privado y claves de servidor.</p><form onSubmit={e=>void login(e)}><label htmlFor="suuCode">Código de acceso</label><input id="suuCode" type="password" autoComplete="off" value={code} onChange={e=>setCode(e.target.value)} placeholder="Código configurado en Vercel" required/><button className="loginButton" disabled={!config.securityReady||!code}><Play size={16}/> Entrar a SUU</button></form>{loginError&&<p role="alert" className="error">{loginError}</p>}{!config.securityReady&&<p className="muted">Faltan SUU_ACCESS_CODE y SUU_SESSION_SECRET en Vercel.</p>}<button className="demoButton" onClick={()=>setDemo(true)}>Explorar demostración visual (sin IA)</button></section></div>}
  </main>
 }
