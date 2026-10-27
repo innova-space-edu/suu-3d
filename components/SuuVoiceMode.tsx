@@ -1,6 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {useMicrophoneInput} from "@/hooks/useMicrophoneInput";
+import {useDellSTT} from "@/hooks/useDellSTT";
 import {spokenText,fairSpokenText,fairAudienceText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
@@ -19,14 +20,15 @@ type SpeechResult={results:Record<number,Record<number,{transcript:string}>>};
 type Recognition={processLocally?:boolean;lang:string;continuous:boolean;interimResults:boolean;onresult:((event:SpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;onspeechstart:(()=>void)|null;onspeechend:(()=>void)|null;start(track?:MediaStreamTrack):void;stop():void};
 type RecognitionConstructor=new()=>Recognition;
 export type FairVoiceCommand={id:number;text:string};
-type Props={modeLabel?:string;fairMode?:boolean;enabled?:boolean;announcement?:FairVoiceCommand|null;onAnnouncementEnd?:(success:boolean)=>void;onAvailable?:(available:boolean)=>void;noiseReduction:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];domain:Domain;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive:boolean};
-export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcement,onAnnouncementEnd,onAvailable,noiseReduction,onClose,onTurn,initial,domain,voiceId,language,quality,solid,tracking,cameraActive}:Props){
+type Props={sttAvailable?:boolean;modeLabel?:string;fairMode?:boolean;enabled?:boolean;announcement?:FairVoiceCommand|null;onAnnouncementEnd?:(success:boolean)=>void;onAvailable?:(available:boolean)=>void;noiseReduction:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];domain:Domain;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive:boolean};
+export default function SuuVoiceMode({sttAvailable=false,modeLabel,fairMode=false,enabled,announcement,onAnnouncementEnd,onAvailable,noiseReduction,onClose,onTurn,initial,domain,voiceId,language,quality,solid,tracking,cameraActive}:Props){
  const [phase,setPhase]=useState<"idle"|"listening"|"thinking"|"speaking"|"error">("idle");
  const [subtitle,setSubtitle]=useState("Activa el micrófono para conversar con SUU.");
  const caption=useRef<HTMLParagraphElement|null>(null);
  useEffect(()=>{if(caption.current)caption.current.scrollTop=0},[subtitle]);
  const [provider,setProvider]=useState(""),[muted,setMuted]=useState(false),[energy,setEnergy]=useState(.04);
  const microphone=useMicrophoneInput();
+ const stt=useDellSTT();
  const meter=useSpeechMeter(setEnergy);
  const lips=useLipSync();
  const speechGeneration=useRef(0),recognitionGeneration=useRef(0),humanSpeaking=useRef(false),announcing=useRef(false);
@@ -37,7 +39,7 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
  onTurnRef.current=onTurn;
  const setPhaseNow=(next:typeof phase)=>{phaseRef.current=next;setPhase(next);reportAvailable()};
  const releaseAudio=useCallback(()=>{speechGeneration.current++;lips.stop();meter.stop();if(audio.current){audio.current.onended=null;audio.current.onerror=null;audio.current.pause();audio.current.src="";audio.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}if(timer.current){clearInterval(timer.current);timer.current=null}if(typeof window!=="undefined")window.speechSynthesis?.cancel();setEnergy(0)},[meter.stop,lips.stop]);
- const stop=useCallback(()=>{stopSignal.current=true;abort.current?.abort();abort.current=null;recognitionGeneration.current++;humanSpeaking.current=false;announcing.current=false;recognizer.current?.stop();microphone.stop();recognizer.current=null;listeningRef.current=false;releaseAudio();setPhaseNow("idle");setSubtitle("Conversación pausada. Pulsa para reanudar.");},[releaseAudio,microphone.stop]);
+ const stop=useCallback(()=>{stopSignal.current=true;stt.cancel();abort.current?.abort();abort.current=null;recognitionGeneration.current++;humanSpeaking.current=false;announcing.current=false;recognizer.current?.stop();microphone.stop();recognizer.current=null;listeningRef.current=false;releaseAudio();setPhaseNow("idle");setSubtitle("Conversación pausada. Pulsa para reanudar.");},[releaseAudio,microphone.stop,stt.cancel]);
  useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();microphone.stop();releaseAudio()},[releaseAudio,microphone.stop]);
  const finishSpeech=(success=true)=>{releaseAudio();if(announcing.current){announcing.current=false;endRef.current?.(success)}setPhaseNow("idle");restart()};
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
@@ -115,6 +117,23 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
  };
  async function listen(){
   if(stopSignal.current||listeningRef.current)return;
+  if(sttAvailable){
+   const generation=++recognitionGeneration.current;
+   listeningRef.current=true;setPhaseNow("listening");setSubtitle("Escuchando con transcripción del Dell…");
+   try{
+    const transcript=await stt.record(language,noiseReduction);
+    if(stopSignal.current||generation!==recognitionGeneration.current)return;
+    listeningRef.current=false;
+    if(transcript){setSubtitle("Tú: "+transcript);void converse(transcript)}
+    else {setPhaseNow("idle");restart()}
+    return;
+   }catch(e){
+    if(stopSignal.current||generation!==recognitionGeneration.current)return;
+    listeningRef.current=false;
+    if(e instanceof Error&&e.name==="AbortError")return;
+    setSubtitle("STT Dell no disponible. Activando reconocimiento del navegador…");
+   }
+  }
   const web=window as Window & {webkitSpeechRecognition?:RecognitionConstructor;SpeechRecognition?:RecognitionConstructor};
   const Constructor=web.SpeechRecognition||web.webkitSpeechRecognition;
   if(!Constructor){setPhaseNow("error");setSubtitle("Para conversación continua usa Chrome o Edge con permiso de micrófono.");return}
@@ -134,7 +153,7 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
  useEffect(()=>{
   if(!announcement||announcement.id===commandSeen.current)return;
   commandSeen.current=announcement.id;
-  recognitionGeneration.current++;recognizer.current?.stop();recognizer.current=null;microphone.stop();listeningRef.current=false;humanSpeaking.current=false;
+  recognitionGeneration.current++;stt.cancel();recognizer.current?.stop();recognizer.current=null;microphone.stop();listeningRef.current=false;humanSpeaking.current=false;
   stopSignal.current=false;announcing.current=true;availableRef.current?.(false);
   void speakRef.current(announcement.text);
  },[announcement,microphone.stop]);
@@ -147,7 +166,7 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
   <div className="voiceBottom"><div className={"voiceStatus "+phase}><AudioLines size={19}/><span>{phase==="listening"?"ESCUCHANDO":phase==="thinking"?"PENSANDO":phase==="speaking"?"HABLANDO":phase==="error"?"REINTENTAR":"EN ESPERA"}</span></div>
    <p ref={caption} aria-live="polite" tabIndex={0} aria-label="Respuesta de SUU">{subtitle}</p>
    <div className="voiceControls"><button className="voiceRound" disabled={fairMode&&enabled===false} onClick={toggle} title={phase==="idle"||phase==="error"?"Iniciar voz":"Pausar voz"}>{phase==="idle"||phase==="error"?<Mic size={27}/>:<MicOff size={27}/>}</button><button className="voiceSmall" onClick={()=>setMuted(v=>!v)} title={muted?"Activar audio":"Silenciar audio"}>{muted?<VolumeX size={20}/>:<Volume2 size={20}/>}</button><button className="voiceSmall" onClick={()=>{stop();onClose()}}>Salir</button></div>
-   <small>{phase==="listening"&&(microphone.mode==="standard"?"Reducción estándar activa. ":"Entrada gestionada por el navegador. ")}Voz instalada del dispositivo prioritaria. El reconocimiento se ejecuta localmente si hay un paquete compatible; si no, el navegador puede utilizar un servicio externo. La escucha se reanuda al terminar y el micrófono se detiene al cerrar o pausar.</small>
+   <small>{phase==="listening"&&(microphone.mode==="standard"?"Reducción estándar activa. ":"Entrada gestionada por el navegador. ")}Voz instalada del dispositivo prioritaria. {sttAvailable?"Transcripción de audio mediante el Dell protegido; el navegador queda como respaldo.":"Transcripción mediante navegador; el STT del Dell se activará cuando esté configurado."} La escucha se reanuda al terminar y el micrófono se detiene al cerrar o pausar.</small>
   </div>
  </div>;
 }
