@@ -50,6 +50,28 @@ class TrialTests(unittest.TestCase):
                 self.assertEqual(trial.print_activation_status(report, Path("synthetic-report.json")), eligible)
             self.assertEqual("--activate" in output.getvalue(), eligible)
 
+    def test_short_diagnostic_cannot_override_current_profile_gaps(self):
+        report = {"candidate_sha": trial.MODEL_SHA, "preset": "current", "baseline": scored(3),
+            "candidate": scored(9), "voice_probe": {"model_total_seconds": 20,
+            "first_audio_ready_seconds": 5, "piper_rtf": .5},
+            "speech_comparison": {"current_60_150": {"max_gap_estimated_seconds": 2},
+                                  "short_35_80": {"max_gap_estimated_seconds": 0}}}
+        with self.assertRaisesRegex(ValueError, "continuidad"):
+            trial.validate_report(report)
+        report["speech_comparison"]["current_60_150"]["max_gap_estimated_seconds"] = float("nan")
+        with self.assertRaisesRegex(ValueError, "continuidad"):
+            trial.validate_report(report)
+
+    def test_quality_stream_exposes_deltas_without_changing_answer(self):
+        events = [{"choices": [{"delta": {"content": word}}]} for word in ("Merc", "urio.")]
+        stream = io.BytesIO(("".join("data: " + json.dumps(event) + "\n\n" for event in events)
+                             + "data: [DONE]\n\n").encode())
+        deltas = []
+        with patch.object(trial.quality.urllib.request, "urlopen", return_value=stream):
+            result = trial.quality.completion(8097, "secret", "synthetic", {}, on_delta=deltas.append)
+        self.assertEqual(deltas, ["Merc", "urio."])
+        self.assertEqual(result["answer"], "Mercurio.")
+
     def test_two_b_profile_pins_weights_and_uses_distinct_local_file(self):
         try:
             trial.select_profile("qwen-2b")

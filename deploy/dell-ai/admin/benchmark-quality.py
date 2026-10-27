@@ -46,7 +46,7 @@ def normalized(text):
     return text.strip().rstrip(".").strip()
 
 
-def completion(port, token, prompt, preset, on_phrase=None):
+def completion(port, token, prompt, preset, on_phrase=None, on_delta=None):
     data = {"model": "suu-local", "stream": True, "max_tokens": 96,
             "messages": [{"role": "system", "content": SYSTEM},
                          {"role": "user", "content": prompt}], **preset}
@@ -79,6 +79,8 @@ def completion(port, token, prompt, preset, on_phrase=None):
                 if first is None:
                     first = elapsed
                 content += delta
+                if on_delta:
+                    on_delta(delta)
                 if phrase is None and (re.search(r".{20,}[.!?;:]\s", content) or len(content) > 60):
                     phrase = elapsed
                     if on_phrase:

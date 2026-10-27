@@ -215,6 +215,47 @@ def voice_probe(token):
                 "note": "Audio listo en Dell; no incluye Vercel, Cloudflare ni reproducción del navegador"}
 
 
+def speech_comparison(token):
+    key = regular(Path.home() / "suu-tts/secrets/tts_api_key.txt").read_text().strip()
+    spec = importlib.util.spec_from_file_location("speech_probe", ROOT / "speech-probe.py")
+    probe = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(probe)
+
+    def synthesize(text):
+        request = urllib.request.Request("http://127.0.0.1:8096/synthesize", data=json.dumps({"text": text}).encode(),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
+        with urllib.request.urlopen(request, timeout=45) as response:
+            audio = response.read(3_000_001)
+        if len(audio) > 3_000_000:
+            raise ValueError("Audio excesivo")
+        with wave.open(io.BytesIO(audio), "rb") as wav:
+            return wav.getnframes() / wav.getframerate()
+
+    def completion(on_delta):
+        return quality.completion(TRIAL_PORT, token,
+            "Explica en tres frases por qué los planetas orbitan alrededor del Sol.",
+            quality.PRESETS["current"], on_delta=on_delta)
+
+    samples = {"current_60_150": [], "short_35_80": []}
+    for repetition in range(3):
+        order = [("current_60_150", 60, 150), ("short_35_80", 35, 80)]
+        if repetition % 2:
+            order.reverse()
+        for name, first, following in order:
+            result = probe.measure(completion, synthesize, first, following)
+            samples[name].append(result)
+            print(json.dumps({"speech_trial": name, "sample": repetition + 1, **result}, ensure_ascii=False), flush=True)
+    comparison = {}
+    for name, rows in samples.items():
+        comparison[name] = {"samples": rows, "diagnostic_only": name == "short_35_80"}
+        for metric in ("first_audio_ready_seconds", "model_total_seconds", "piper_rtf",
+                       "max_gap_estimated_seconds", "total_gaps_estimated_seconds"):
+            comparison[name][metric] = max(row[metric] for row in rows)
+    print(json.dumps({"speech_comparison_summary": {name: {key: value for key, value in row.items() if key != "samples"}
+                                                     for name, row in comparison.items()}}, ensure_ascii=False), flush=True)
+    return comparison
+
+
 def score(rows):
     expected = {case for case, _, answer in quality.CASES if answer is not None}
     scored = [row for row in rows if row.get("case") in expected]
@@ -262,6 +303,12 @@ def validate_report(report):
             or "error" in probe or "skipped" in probe or probe.get("model_total_seconds", 999) > 45
             or probe.get("piper_rtf", 999) >= 1 or probe.get("first_audio_ready_seconds", 999) > 8):
         raise ValueError("La voz debe estar lista en ≤8 s y el texto completo en ≤45 s, con RTF <1")
+
+    if report.get("speech_comparison"):
+        baseline_speech = report["speech_comparison"]["current_60_150"]
+        gap = baseline_speech.get("max_gap_estimated_seconds", 999)
+        if not isinstance(gap, (int, float)) or not math.isfinite(gap) or not 0 <= gap <= 1:
+            raise ValueError("La continuidad estimada tiene pausas superiores a 1 segundo")
 
 
 def print_activation_status(report, path):
@@ -343,6 +390,7 @@ def physical_cores():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--speech-trial", action="store_true", help="Comparar fragmentos 60/150 y 35/80, con continuidad estimada")
     parser.add_argument("--model", choices=tuple(PROFILES), help="Modelo candidato; producción permanece intacta")
     parser.add_argument("--tune", action="store_true", help="Comparar CPU 2/4/6 con calentamiento; no activa producción")
     action = parser.add_mutually_exclusive_group()
@@ -407,19 +455,24 @@ def main():
             quality.completion(TRIAL_PORT, token, "Di solamente: listo.", quality.PRESETS["current"])
             print(f"Evaluando {PROFILE}…", flush=True)
             candidate = suite(TRIAL_PORT, token, PROFILE, "current")
+            comparison = None
             try:
-                probes = [voice_probe(token) for _ in range(3)]
-                probe = dict(probes[0])
-                probe["samples"] = probes
-                # Worst of three samples: a fast lucky sample must not pass activation.
-                for metric in ("first_audio_ready_seconds", "model_total_seconds", "piper_rtf"):
-                    probe[metric] = max(row.get(metric, 999) for row in probes)
+                comparison = speech_comparison(token) if args.speech_trial else None
+                if comparison:
+                    # Only current browser fragmentation may authorize activation.
+                    probe = comparison["current_60_150"]
+                else:
+                    probes = [voice_probe(token) for _ in range(3)]
+                    probe = dict(probes[0])
+                    probe["samples"] = probes
+                    for metric in ("first_audio_ready_seconds", "model_total_seconds", "piper_rtf"):
+                        probe[metric] = max(row.get(metric, 999) for row in probes)
             except Exception as error:
                 probe = {"error": type(error).__name__}
             print(json.dumps({"voice_probe": probe}, ensure_ascii=False))
             state = inspect(cmd, container)["State"]
             summary = {"model_profile": PROFILE, "candidate_sha": MODEL_SHA, "image_id": image_id, "image_digest": digests[0],
-                       "baseline": baseline, "candidate": candidate, "voice_probe": probe,
+                       "baseline": baseline, "candidate": candidate, "voice_probe": probe, "speech_comparison": comparison,
                        "oom_killed": state.get("OOMKilled", False),
                        "resources": {"available_gib_before_trial": round(available / GIB, 2),
                                      "candidate_limit_gib": 5, "candidate_cpus": threads}, "preset": "current"}
