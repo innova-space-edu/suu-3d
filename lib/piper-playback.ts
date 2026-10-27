@@ -32,6 +32,22 @@ export function splitPiperSpeech(text:string):string[]{
 
 export type PiperClipHandler=(player:HTMLAudioElement,url:string,phrase:string,part:number)=>void;
 
+// Deadline applies to each individual phrase, never to the entire reply.
+// Users may listen to several clips while subsequent ones are prepared.
+async function requestPhrase(phrase:string,signal:AbortSignal):Promise<Blob>{
+ const ctl=new AbortController();
+ const cancel=()=>ctl.abort();
+ signal.addEventListener("abort",cancel,{once:true});
+ const timer=setTimeout(()=>ctl.abort(),47000);
+ try{
+  if(signal.aborted)throw new Error("Reproducción cancelada");
+  return await requestPiperAudio(phrase,ctl.signal);
+ }finally{
+  clearTimeout(timer);
+  signal.removeEventListener("abort",cancel);
+ }
+}
+
 async function playClip(player:HTMLAudioElement,signal:AbortSignal):Promise<void>{
  if(signal.aborted)throw new Error("Reproducción cancelada");
  await new Promise<void>((resolve,reject)=>{
@@ -58,13 +74,13 @@ async function playClip(player:HTMLAudioElement,signal:AbortSignal):Promise<void
 export async function playPiperSpeech(text:string,signal:AbortSignal,onClip:PiperClipHandler):Promise<void>{
  const phrases=splitPiperSpeech(text);
  if(!phrases.length)return;
- let current=await requestPiperAudio(phrases[0],signal);
+ let current=await requestPhrase(phrases[0],signal);
  for(let part=0;part<phrases.length;part++){
   if(signal.aborted)throw new Error("Reproducción cancelada");
   // Convert rejection into data so an early prefetch failure never leaks an
   // unhandled promise rejection while the previous clip is still playing.
   const next=part+1<phrases.length
-   ?requestPiperAudio(phrases[part+1],signal)
+   ?requestPhrase(phrases[part+1],signal)
      .then(blob=>({ok:true as const,blob}),error=>({ok:false as const,error}))
    :null;
   const url=URL.createObjectURL(current);
