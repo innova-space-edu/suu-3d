@@ -1,8 +1,12 @@
 # Ampliación controlada del MCP Dell V12.2 para SUU
 
-**Auditoría inicial (26-10-2026):** el agente `innova-admin-agent` respondía,
-Tailscale Serve exigía identidad propietaria y el catálogo `catalog=[]` estaba vacío.
-Después del reinicio manual, el conector comenzó a fallar; comprobar el servicio real por SSH. No se debe
+**Verificación por SSH (26-10-2026):** `innova-admin-agent.service` está
+activo, su ejecutable es `/opt/innova-admin/agent.py`, Docker funciona con
+`sudo` y el único `policy.json` localizado en directorios habituales es
+`/etc/innova-admin/policy.json`. El contenedor `suu-llm` arrancó y el GGUF
+superó la comprobación de SHA-256. **Todavía no hay prueba de inferencia real.**
+Las herramientas administrativas del conector siguen fallando después del
+reinicio; no dar por confirmada su recuperación. No se debe
 convertir `ejecutar_comando_aislado` en shell del anfitrión ni montar
 `/var/run/docker.sock` dentro del runner.
 
@@ -51,6 +55,61 @@ dentro de la política, unidad systemd o journal.** Una ruta encontrada por
 `sudo systemctl cat innova-admin-agent.service` y el `agent.py` referenciado
 para confirmar desde dónde carga `policy.json`.
 
+## Estado posterior al primer despliegue
+
+Con `suu-llm` ya arrancado, **no es necesario reinstalarlo**. Primero validar
+que realmente genera respuestas sin sacar la clave del servidor:
+
+```bash
+cd ~/suu-3d && git pull --ff-only
+cd deploy/dell-ai
+sudo docker ps --filter name=suu-llm
+sudo docker logs --tail 60 suu-llm
+python3 admin/verify-suu.py
+```
+
+El script usa solamente `127.0.0.1:8094` y lee la clave desde
+`~/suu-ai/secrets/suu_api_key.txt`, sin mostrarla ni enviarla a otro host.
+Un contenedor iniciado no equivale necesariamente a un modelo cargado.
+
+Para registrar el contenedor (si la inferencia funciona y el MCP se recupera),
+se encontró un candidato real en `/etc/innova-admin/policy.json`.
+Antes de aplicarlo, confirmar localmente que el `agent.py` cargue esa misma
+ruta, mediante `sudo grep -nE 'policy.json|POLICY' /opt/innova-admin/agent.py`
+revisado solo en terminal del propietario. No compartir configuración sensible.
+Luego, ejecutar:
+
+```bash
+sudo python3 admin/register-suu-docker.py --policy /etc/innova-admin/policy.json
+# Si el esquema se reconoce y el único cambio es autorizar suu-llm:
+sudo python3 admin/register-suu-docker.py --policy /etc/innova-admin/policy.json --apply
+sudo python3 -m json.tool /etc/innova-admin/policy.json >/dev/null
+sudo systemctl restart innova-admin-agent.service
+sudo systemctl is-active innova-admin-agent.service
+```
+
+No utilizar la ruta antigua `/opt/innova-admin/policy.json` (no existe
+en este equipo). No ejecutar `--apply` si `projects`/`docker` no concuerdan
+con el esquema esperado, o si hay errores de autenticación persistentes en
+el conector. La lista Docker por sí sola **no autoriza instalaciones nuevas**.
+
+### Si el MCP administrativo continúa inaccesible
+
+El agente puede estar `active` mientras su socket o el túnel MCP no respondan.
+Recoger únicamente diagnóstico sin secretos:
+
+```bash
+sudo ls -l /run/innova-admin/admin.sock
+sudo systemctl status innova-mcp-tunnel.service --no-pager -l
+sudo docker ps --filter name=intranet-mcp --format '{{.Names}}: {{.Status}}'
+curl -sS -o /dev/null -w "MCP health HTTP=%{http_code}\\n" http://127.0.0.1:3199/healthz
+sudo tailscale serve status
+```
+
+Comprobar políticas de origen/identidad desde el portal privado, sin relajar
+los controles para resolver un error de conexión. **No exponer el socket MCP,
+no abrir el puerto en Internet y no desactivar la aprobación del propietario.**
+
 ## Paso inicial único desde SSH privado del propietario
 
 ```bash
@@ -61,7 +120,7 @@ bash admin/bootstrap-suu.sh --apply
 
 # SOLO después de identificar la ruta real que usa el agente.
 # Sustituir por el archivo confirmado, no por un candidato al azar:
-POLICY=/ruta/real/confirmada/policy.json
+POLICY=/etc/innova-admin/policy.json
 sudo test -f "$POLICY" || { echo "Ruta no válida"; exit 1; }
 sudo python3 admin/register-suu-docker.py --policy "$POLICY"
 # Si la revisión conservadora es correcta, aplicar:
