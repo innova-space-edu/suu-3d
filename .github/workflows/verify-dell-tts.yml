@@ -27,3 +27,29 @@ jobs:
         run: >-
           docker run --rm --network none --entrypoint python suu-tts-ci:verify
           -c "from piper import PiperVoice; import fastapi; print('Piper Python import: OK')"
+
+      - name: Download a public Spanish Piper voice and synthesize offline
+        run: |
+          model_dir="$(mktemp -d)"
+          trap 'rm -rf "$model_dir"' EXIT
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$model_dir:/voices" -e HOME=/voices \
+            -e XDG_CACHE_HOME=/voices/.cache --entrypoint python suu-tts-ci:verify \
+            -m piper.download_voices --data-dir /voices es_AR-daniela-high
+          test -s "$model_dir/es_AR-daniela-high.onnx"
+          test -s "$model_dir/es_AR-daniela-high.onnx.json"
+          docker run --rm --network none --read-only \
+            --user "$(id -u):$(id -g)" \
+            --tmpfs /tmp:rw,size=64m \
+            -v "$model_dir:/voices:ro" --entrypoint python suu-tts-ci:verify -c '
+          import io
+          import wave
+          from piper import PiperVoice
+          voice = PiperVoice.load("/voices/es_AR-daniela-high.onnx")
+          buff = io.BytesIO()
+          with wave.open(buff, "wb") as wav:
+              voice.synthesize_wav("Hola, soy SUU.", wav)
+          audio = buff.getvalue()
+          assert audio[:4] == b"RIFF" and len(audio) > 100
+          print("Piper synthesis offline: OK; audio_bytes=", len(audio))
+          '
