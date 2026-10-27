@@ -4,31 +4,7 @@ import {requestPiperAudio} from "@/lib/piper-client";
  * next one while the current clip plays, and never run concurrent CPU jobs.
  * Payloads stay in memory and the caller owns URL/player cleanup.
  */
-export function splitPiperSpeech(text:string):string[]{
- let remaining=text.trim().slice(0,700);
- const phrases:string[]=[];
- while(remaining){
-  const limit=phrases.length===0?135:230;
-  if(remaining.length<=limit){phrases.push(remaining);break}
-  const front=remaining.slice(0,limit+1);
-  let cut=0;
-  // Prefer punctuation at natural boundaries, but never create a tiny clip.
-  const punctuation=/[.!?;:](?=\s)/g;
-  for(const match of front.matchAll(punctuation)){
-   const end=(match.index||0)+1;
-   if(end>=limit*.55)cut=end;
-  }
-  if(!cut){
-   const lastSpace=front.lastIndexOf(" ");
-   cut=lastSpace>=limit*.55?lastSpace:limit;
-  }
-  const phrase=remaining.slice(0,cut).trim();
-  if(!phrase){cut=limit;phrases.push(remaining.slice(0,cut))}
-  else phrases.push(phrase);
-  remaining=remaining.slice(cut).trim();
- }
- return phrases;
-}
+import {splitPiperSpeech} from "@/lib/piper-chunks.mjs";
 
 export type PiperClipHandler=(player:HTMLAudioElement,url:string,phrase:string,part:number)=>void;
 
