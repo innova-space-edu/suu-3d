@@ -13,19 +13,49 @@ fi
 "${docker_cmd[@]}" info >/dev/null
 "${docker_cmd[@]}" compose version >/dev/null
 "${docker_cmd[@]}" network inspect portal_default >/dev/null || { echo "Falta portal_default"; exit 1; }
-for f in compose.yaml Dockerfile requirements.txt service.py preload.py; do
+# Only migrate the exact v1 files already copied by the previously failed
+# installer. Unknown/manual edits are NEVER overwritten.
+files=(compose.yaml Dockerfile requirements.txt service.py preload.py)
+previous_revision="9d9bcec1d9c0333840273683efbf7650fb94d6a0"
+migrate=()
+[[ ! -L "$target" ]] || { echo "Destino simbólico no permitido"; exit 1; }
+for f in "${files[@]}"; do
  [[ -f "$src/$f" && ! -L "$src/$f" ]] || { echo "Falta $f"; exit 1; }
- if [[ -e "$target/$f" ]] && ! cmp -s "$src/$f" "$target/$f"; then
-  echo "Hay una versión local modificada de $target/$f. Revisión manual requerida"; exit 1
+ if [[ -e "$target/$f" || -L "$target/$f" ]]; then
+  [[ -f "$target/$f" && ! -L "$target/$f" ]] || {
+   echo "Archivo de destino no es regular: $target/$f"; exit 1;
+  }
+  if ! cmp -s "$src/$f" "$target/$f"; then
+   if git -C "$src" show "$previous_revision:deploy/dell-stt/$f" 2>/dev/null | cmp -s - "$target/$f"; then
+    migrate+=("$f")
+   else
+    echo "Archivo modificado o desconocido: $target/$f. No se sobrescribirá"; exit 1;
+   fi
+  fi
  fi
 done
+if (( ${#migrate[@]} > 0 )); then
+ echo "Migración segura: ${migrate[*]} (solo versión anterior conocida)"
+fi
 echo "Fuente: $src"
 echo "Destino: $target"
 echo "Contenedor: suu-stt, puerto localhost 127.0.0.1:8095, CPU 2, RAM 2GiB"
 echo "No toca: suu-llm, intranet, MCP, PostgreSQL, DNS o Cloudflare"
 if [[ "$mode" == --dry-run ]]; then echo "PREVISUALIZACIÓN. Sin modificaciones"; exit 0; fi
 install -d -m 0700 "$target" "$target/models" "$target/secrets"
-for f in compose.yaml Dockerfile requirements.txt service.py preload.py; do cp "$src/$f" "$target/$f"; done
+if (( ${#migrate[@]} > 0 )); then
+ timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+ for f in "${migrate[@]}"; do
+  [[ ! -e "$target/$f.bak.$timestamp" ]] || {
+   echo "El respaldo ya existe; abortado"; exit 1;
+  }
+ done
+ for f in "${migrate[@]}"; do
+  cp -p "$target/$f" "$target/$f.bak.$timestamp"
+  echo "Respaldo: $target/$f.bak.$timestamp"
+ done
+fi
+for f in "${files[@]}"; do cp "$src/$f" "$target/$f"; done
 envfile="$target/.env"
 if [[ -e "$envfile" ]]; then
  [[ -f "$envfile" && ! -L "$envfile" ]] || { echo ".env inválido"; exit 1; }

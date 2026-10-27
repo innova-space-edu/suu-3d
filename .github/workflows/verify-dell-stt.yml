@@ -1,0 +1,25 @@
+name: Verify Dell STT Docker
+on:
+  pull_request:
+    paths:
+      - 'deploy/dell-stt/**'
+      - '.github/workflows/verify-dell-stt.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-stt-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify STT image builds from binary wheels
+        run: docker build --pull --progress=plain --tag suu-stt-ci:verify deploy/dell-stt
+      - name: Verify PyAV and faster-whisper imports
+        run: >-
+          docker run --rm --network none --entrypoint python suu-stt-ci:verify
+          -c "import av, ctranslate2, faster_whisper; print('STT wheels OK; PyAV='+av.__version__)"
