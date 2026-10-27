@@ -12,7 +12,6 @@ from pathlib import Path
 import shutil
 import tempfile
 
-DEFAULT = Path("/opt/innova-admin/policy.json")
 CONTAINER = "suu-llm"
 
 def prepare(data):
@@ -33,7 +32,8 @@ def prepare(data):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policy", type=Path, default=DEFAULT)
+    parser.add_argument("--policy", type=Path, required=True,
+                        help="Ruta REAL de policy.json usado por el servicio systemd")
     parser.add_argument("--apply", action="store_true",
                         help="Requiere aprobación del propietario en sesión SSH")
     args = parser.parse_args()
@@ -56,8 +56,8 @@ def main():
     if not args.apply:
         print("MODO DIAGNÓSTICO: no se ha escrito nada. Usar --apply con autorización del propietario.")
         return
-    if os.geteuid() != 0 and path.resolve() == DEFAULT:
-        parser.error("Al modificar la política del anfitrión se requiere sudo en SSH")
+    if not os.access(path, os.W_OK):
+        parser.error("No hay permiso de escritura sobre policy.json; usar sudo desde SSH")
     if updated == data:
         print("Sin cambios")
         return
