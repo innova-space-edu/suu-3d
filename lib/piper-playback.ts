@@ -50,24 +50,37 @@ async function playClip(player:HTMLAudioElement,signal:AbortSignal):Promise<void
 export async function playPiperSpeech(text:string,signal:AbortSignal,onClip:PiperClipHandler):Promise<void>{
  const phrases=splitPiperSpeech(text);
  if(!phrases.length)return;
- let current=await requestPhrase(phrases[0],signal);
+ const session=new AbortController();
+ const cancel=()=>session.abort();
+ signal.addEventListener("abort",cancel,{once:true});
+ if(signal.aborted)cancel();
+ try{
+ let current=await requestPhrase(phrases[0],session.signal);
  for(let part=0;part<phrases.length;part++){
   if(signal.aborted)throw new Error("Reproducción cancelada");
   // Convert rejection into data so an early prefetch failure never leaks an
   // unhandled promise rejection while the previous clip is still playing.
   const next=part+1<phrases.length
-   ?requestPhrase(phrases[part+1],signal)
+   ?requestPhrase(phrases[part+1],session.signal)
      .then(blob=>({ok:true as const,blob}),error=>({ok:false as const,error}))
    :null;
   const url=URL.createObjectURL(current);
   const player=new Audio(url);
-  try{onClip(player,url,phrases[part],part)}
-  catch(error){URL.revokeObjectURL(url);throw error}
+  try{
+  onClip(player,url,phrases[part],part);
   await playClip(player,signal);
+  }finally{
+   player.pause();
+   URL.revokeObjectURL(url);
+  }
   if(next){
    const result=await next;
    if(!result.ok)throw result.error;
    current=result.blob;
   }
+ }
+ }finally{
+  session.abort();
+  signal.removeEventListener("abort",cancel);
  }
 }

@@ -90,3 +90,78 @@ cd ~/suu-tts && sudo docker compose stop suu-tts
 ```
 
 No ejecutar `docker compose down` sobre la intranet, Qwen o Whisper.
+# Optimización de instalación existente
+
+## Comparar una voz femenina más ligera
+
+```bash
+bash deploy/dell-tts/compare-voices.sh --apply
+```
+
+Cerrar las conversaciones de SUU durante la medición. El proceso tarda varios
+minutos: actualiza el servicio, espera a que esté saludable, descarga Sharvard y
+ejecuta secuencialmente 18 síntesis en contenedores temporales sin red ni puertos.
+Compara Daniela con una CPU y Sharvard con una y dos CPU; cada proceso usa un
+modelo persistente precalentado, seis frases idénticas y una cuota de CPU igual
+al número de hilos. El informe JSONL queda en `~/suu-tts/voice-comparison-*.jsonl`.
+La prueba de dos CPU es temporal y no modifica Qwen ni su configuración.
+
+Sharvard medium (`es_ES-sharvard-medium`) contiene dos hablantes. El JSON oficial
+identifica `M: 0` y **`F: 1`**; el perfil femenino usa explícitamente `speaker_id=1`.
+Fuente/configuración: https://huggingface.co/rhasspy/piper-voices/blob/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx.json
+Modelo Piper por rhasspy, voz basada en el dataset Sharvard (Universidad de
+Edimburgo), licencia del dataset CC BY 3.0 según su tarjeta:
+https://huggingface.co/rhasspy/piper-voices/blob/main/es/es_ES/sharvard/medium/MODEL_CARD
+
+Solo se activa Sharvard con **una CPU** si su RTF mediano es menor que 1 y mejora
+al menos 15% frente a Daniela en la misma ejecución. Si no, conserva el perfil
+actual. Los resultados de dos CPU quedan para revisión; no se activan solos y
+no demuestran que Qwen mantenga su velocidad mientras conversa.
+La calidad/pronunciación debe comprobarse escuchando SUU después del cambio.
+Daniela permanece instalada. Selección y reversión manual:
+
+```bash
+bash deploy/dell-tts/select-voice.sh sharvard 1
+bash deploy/dell-tts/select-voice.sh daniela 1
+# Solo después de revisar el informe y comprobar Qwen:
+bash deploy/dell-tts/select-voice.sh sharvard 2
+```
+
+La selección modifica solo cuatro variables del perfil en `.env`, respalda el
+archivo y restaura el perfil anterior si el nuevo servicio no llega a saludable.
+El selector web mantiene su ID anterior por compatibilidad, con etiqueta genérica
+«Piper · voz femenina configurada en el Dell». No hace falta cambiar Vercel o el
+túnel para probar el perfil del servidor.
+
+Desde la copia actualizada del repositorio, ejecutar como usuario propietario:
+
+```bash
+bash deploy/dell-tts/upgrade.sh --dry-run
+bash deploy/dell-tts/upgrade.sh --apply
+curl -fsS http://127.0.0.1:8096/health
+sudo docker exec suu-tts python /app/benchmark.py
+```
+
+`upgrade.sh` conserva los modelos, la clave y `.env`, respalda los archivos de
+servicio y reconstruye solamente `suu-tts`. No usar `bootstrap.sh` para actualizar:
+su protección contra sobrescrituras es deliberada. La nueva salud informa
+`threads: 1` y `optimized: true` después del precalentamiento.
+
+Para comparar antes de actualizar, se puede ejecutar el benchmark nuevo por stdin:
+`sudo docker exec -i suu-tts python - < deploy/dell-tts/benchmark.py`.
+Usar las mismas condiciones de carga en ambas mediciones, sin otra conversación
+activa. El benchmark hace seis síntesis y no guarda ni imprime texto o claves.
+RTF = tiempo de síntesis / duración de audio: por encima de 1 habrá pausas aunque
+se divida el texto. Por debajo de 0,5 deja margen para red y Qwen.
+
+La sesión ONNX es persistente, secuencial, con un hilo y sin espera activa,
+ajustada al límite de una CPU del contenedor. `OMP_NUM_THREADS` por sí solo no
+configura los hilos propios de ONNX. No aumentar núcleos o cambiar de voz hasta
+comparar el RTF; aumentar núcleos de Piper puede perjudicar Qwen e intranet.
+El proxy expone `Server-Timing`, `X-Suu-Synthesis-Rtf` y
+`X-Suu-Audio-Seconds` para separar cómputo local y tiempo total de ida y vuelta.
+
+La web aún recibe la respuesta completa de Qwen antes de iniciar Piper. La
+fragmentación reduce la espera de voz, pero no elimina esa espera inicial.
+La sincronización labial de Piper sigue siendo estimada por texto y duración,
+anclada al reloj del audio; no es alineación fonética real.

@@ -8,7 +8,7 @@ mode="${1:---dry-run}"
 [[ "$EUID" != 0 ]] || { echo "Ejecutar como propietario, no root"; exit 1; }
 src="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 target="$HOME/suu-tts"
-files=(compose.yaml Dockerfile requirements.txt service.py)
+files=(compose.yaml Dockerfile requirements.txt service.py benchmark.py)
 if docker info >/dev/null 2>&1; then cmd=(docker); else
  command -v sudo >/dev/null || { echo "sudo no disponible"; exit 1; }
  sudo -v; cmd=(sudo docker)

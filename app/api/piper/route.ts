@@ -9,7 +9,7 @@ const MAX_INPUT_CHARS=700, MAX_AUDIO_BYTES=3_000_000;
 export async function POST(req:NextRequest){
  if(!originAllowed(req))return NextResponse.json({error:"Origen rechazado"},{status:403});
  if(!await authorized())return NextResponse.json({error:"Acceso requerido"},{status:401});
- if(!throttle("piper:"+clientIdentity(req),15))return NextResponse.json({error:"Límite de voz"},{status:429});
+ if(!throttle("piper:"+clientIdentity(req),40))return NextResponse.json({error:"Límite de voz"},{status:429});
  if(!piperConfigured())return NextResponse.json({error:"Piper Dell no está habilitado",reason:"missing_config"},{status:503});
  const declared=req.headers.get("content-length");
  if(declared&&(!/^\d+$/.test(declared)||Number(declared)>3500))
@@ -27,6 +27,9 @@ export async function POST(req:NextRequest){
   return NextResponse.json({error:"Texto de voz inválido"},{status:400});
  const startedAt=performance.now();
  const controller=new AbortController();
+ const cancel=()=>controller.abort();
+ req.signal.addEventListener("abort",cancel,{once:true});
+ if(req.signal.aborted)cancel();
  const timer=setTimeout(()=>controller.abort(),43000);
  try{
   const origin=process.env.SUU_TTS_API_BASE_URL!.replace(/\/+$/,"");
@@ -66,12 +69,15 @@ export async function POST(req:NextRequest){
   return new NextResponse(audio,{
    headers:{"Content-Type":"audio/wav","Cache-Control":"private, no-store",
     "X-Suu-Voice-Provider":"dell-piper",
-    "Server-Timing":`piper-upstream;dur=${Math.round(performance.now()-startedAt)}`}
+    "Server-Timing":`piper-upstream;dur=${Math.round(performance.now()-startedAt)}`+
+     (upstream.headers.get("server-timing")?`, ${upstream.headers.get("server-timing")}`:""),
+    ...(upstream.headers.get("x-suu-synthesis-rtf")?{"X-Suu-Synthesis-Rtf":upstream.headers.get("x-suu-synthesis-rtf")!}:{}),
+    ...(upstream.headers.get("x-suu-audio-seconds")?{"X-Suu-Audio-Seconds":upstream.headers.get("x-suu-audio-seconds")!}:{})}
   });
  }catch(err){
   const reason=controller.signal.aborted?"upstream_timeout":"upstream_network";
   console.warn("[SUU Piper]",{reason});
   return NextResponse.json({error:"Piper no responde",reason},{status:503});
  }
- finally{clearTimeout(timer)}
+ finally{clearTimeout(timer);req.signal.removeEventListener("abort",cancel)}
 }
