@@ -55,6 +55,26 @@ dentro de la política, unidad systemd o journal.** Una ruta encontrada por
 `sudo systemctl cat innova-admin-agent.service` y el `agent.py` referenciado
 para confirmar desde dónde carga `policy.json`.
 
+## Reparación del reinicio continuo (error de acceso a clave)
+
+El GGUF ya fue descargado; solo se necesita migrar el archivo Compose.
+Se mantiene la misma clave y el mismo modelo. El instalador configura el
+UID/GID de su propietario y monta la clave en modo solo lectura.
+
+```bash
+cd ~/suu-3d && git pull --ff-only
+cd deploy/dell-ai
+bash admin/bootstrap-suu.sh --dry-run
+bash admin/bootstrap-suu.sh --apply
+python3 admin/verify-suu.py
+```
+
+La migración se niega a sobrescribir un Compose personalizado; reconoce
+únicamente la versión anterior conocida. No dar permisos públicos a la clave.
+
+El registrador de política admite tanto listas como objetos en `catalog`,
+pero nunca modifica ese campo. Previsualizar antes de aplicar cambios.
+
 ## Estado posterior al primer despliegue
 
 Con `suu-llm` ya arrancado, **no es necesario reinstalarlo**. Primero validar
