@@ -59,7 +59,7 @@ export default function SuuConsole(){
    const ctl=new AbortController();piperAbort.current=ctl;
    let played=false;
    try{
-    await playPiperSpeech(text,ctl.signal,(player,url,phrase)=>{
+    await playPiperSpeech(text,ctl.signal,(player,url,phrase,part)=>{
      if(ticket!==voiceGeneration.current)throw new Error("Reproducción cancelada");
      if(audioUrl.current)URL.revokeObjectURL(audioUrl.current);
      audioUrl.current=url;audioRef.current=player;
@@ -67,6 +67,7 @@ export default function SuuConsole(){
      player.onplay=()=>setSpeaking(true);
      void meter.start(player);
      played=true;
+     if(part===0)setNotice(prev=>prev.includes("Piper")||prev.includes("voz de respaldo")?"":prev);
     });
     if(ticket===voiceGeneration.current)stopVoice();
     return;
