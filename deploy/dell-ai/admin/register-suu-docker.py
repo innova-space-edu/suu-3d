@@ -21,8 +21,13 @@ def prepare(data):
         isinstance(name, str) for name in data["docker"]
     ):
         raise ValueError("Esquema 'docker' desconocido: abortado, sin cambios")
-    if "catalog" in data and not isinstance(data["catalog"], list):
-        raise ValueError("Esquema 'catalog' desconocido: abortado, sin cambios")
+    # V11/V12 installations may encode catalog as a mapping keyed by recipe,
+    # or as an array. It is left completely unchanged in either case.
+    if "catalog" in data and not isinstance(data["catalog"], (list, dict)):
+        raise ValueError(
+            "Esquema 'catalog' desconocido (" +
+            type(data["catalog"]).__name__ + "): abortado, sin cambios"
+        )
     if "projects" in data and not isinstance(data["projects"], dict):
         raise ValueError("Esquema 'projects' desconocido: abortado, sin cambios")
     result = json.loads(json.dumps(data))
@@ -46,8 +51,9 @@ def main():
     print("Archivo:", path)
     print("Claves de política:", sorted(data.keys()))
     print("Docker permitido (nombres):", data["docker"])
-    print("Catálogo: ", type(data.get("catalog")).__name__,
-          "entradas:", len(data.get("catalog", [])) if isinstance(data.get("catalog"),list) else "desconocido")
+    catalog = data.get("catalog", [])
+    print("Catálogo:", type(catalog).__name__,
+          "entradas:", len(catalog) if isinstance(catalog, (list, dict)) else "desconocido")
     print("Único cambio propuesto: añadir suu-llm a la allowlist Docker")
     print("Instalaciones desde MCP: NO habilitadas por este cambio")
     if raw == (json.dumps(updated, indent=2, ensure_ascii=False)+"\n").encode() and args.apply:
