@@ -1,6 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {selectBrowserVoice} from "@/lib/browser-voice";
+import {requestPiperAudio} from "@/lib/piper-client";
 import {preferOnDeviceRecognition} from "@/lib/local-recognition";
 import dynamic from "next/dynamic";
 import {Activity,AudioLines,BrainCircuit,ChevronRight,CircleHelp,Cpu,FileText,LogOut,Mic,MicOff,Orbit,Play,Send,Settings2,Shield,ShieldCheck,Square,Volume2,VolumeX,Waypoints,Maximize2,Minimize2,Camera,CameraOff,Headphones} from "lucide-react";
@@ -18,7 +19,7 @@ const SuuFairMode=dynamic(()=>import("./SuuFairMode"),{ssr:false});
 const SuuAvatar=dynamic(()=>import("./SuuAvatar"),{ssr:false});const SuuSolarDemo=dynamic(()=>import("./SuuSolarDemo"),{ssr:false});
 type Voice={id:string;label:string;locale:string;source:"eduai"|"elevenlabs"};
 type ProviderInfo={id:string;name:string;model:string;configured:boolean};
-type Config={stt?:boolean;authenticated:boolean;securityReady:boolean;llm:boolean;voice:boolean;voicePremium?:boolean;livekit:boolean;providers?:ProviderInfo[];bridges:Record<string,boolean>};
+type Config={ttsLocal?:boolean;stt?:boolean;authenticated:boolean;securityReady:boolean;llm:boolean;voice:boolean;voicePremium?:boolean;livekit:boolean;providers?:ProviderInfo[];bridges:Record<string,boolean>};
 const defaultConfig:Config={authenticated:false,securityReady:false,llm:false,voice:false,livekit:false,bridges:{}};
 const welcome:ChatMessage={role:"assistant",content:"Hola. Soy SUU, la interfaz holográfica de Innova Space Education. Puedo conversar, ayudarte a investigar y presentar simulaciones. Las conexiones externas solo funcionan cuando están autorizadas y configuradas."};
 type SpeechResult={results:Record<number,Record<number,{transcript:string}>>};type SpeechRecognitionLike={processLocally?:boolean;lang:string;interimResults:boolean;continuous:boolean;onresult:((e:SpeechResult)=>void)|null;onerror:(()=>void)|null;onend:(()=>void)|null;start:(track?:MediaStreamTrack)=>void;stop:()=>void};type SpeechCtor=new()=>SpeechRecognitionLike;
@@ -37,6 +38,7 @@ export default function SuuConsole(){
  useEffect(()=>{const change=()=>setFullScreen(Boolean(document.fullscreenElement));document.addEventListener("fullscreenchange",change);return()=>document.removeEventListener("fullscreenchange",change)},[]);
  useEffect(()=>{if((voiceOnly||fairMode)&&document.fullscreenElement)void document.exitFullscreen().catch(()=>{})},[voiceOnly,fairMode]);
  const voiceGeneration=useRef(0);
+ const piperAbort=useRef<AbortController|null>(null);
  const recognition=useRef<SpeechRecognitionLike|null>(null),audioRef=useRef<HTMLAudioElement|null>(null),audioUrl=useRef<string|null>(null),speechTimer=useRef<ReturnType<typeof setInterval>|null>(null),scroll=useRef<HTMLDivElement>(null),liveSpeech=useRef(false);
  const load=useCallback(async()=>{try{const r=await fetch("/api/session",{cache:"no-store"});if(r.ok)setConfig(await r.json())}catch{setNotice("No se pudo consultar el estado del servidor.")}finally{setBooting(false)}},[]);
  useEffect(()=>{void load()},[load]);
@@ -44,17 +46,41 @@ export default function SuuConsole(){
  useEffect(()=>{if(typeof window==="undefined"||!("speechSynthesis" in window))return;const speech=window.speechSynthesis;const refresh=()=>setBrowserVoices(speech.getVoices());refresh();speech.addEventListener?.("voiceschanged",refresh);return()=>speech.removeEventListener?.("voiceschanged",refresh)},[]);
 
  useEffect(()=>{scroll.current?.scrollTo({top:scroll.current.scrollHeight,behavior:"smooth"})},[messages,sending]);
- const stopVoice=useCallback(()=>{voiceGeneration.current++;lips.stop();meter.stop();speechSynthesis?.cancel();if(speechTimer.current)clearInterval(speechTimer.current);speechTimer.current=null;if(audioRef.current){audioRef.current.onended=null;audioRef.current.onerror=null;audioRef.current.pause();audioRef.current.src="";audioRef.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}setSpeaking(false);setEnergy(0)},[meter.stop,lips.stop]);
+ const stopVoice=useCallback(()=>{voiceGeneration.current++;piperAbort.current?.abort();piperAbort.current=null;lips.stop();meter.stop();speechSynthesis?.cancel();if(speechTimer.current)clearInterval(speechTimer.current);speechTimer.current=null;if(audioRef.current){audioRef.current.onended=null;audioRef.current.onerror=null;audioRef.current.pause();audioRef.current.src="";audioRef.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}setSpeaking(false);setEnergy(0)},[meter.stop,lips.stop]);
  useEffect(()=>()=>{recognition.current?.stop();microphone.stop();stopVoice()},[stopVoice,microphone.stop]);
  const synthesize=async(text:string)=>{
   const selectedLocale=voices.find(v=>v.id===voiceId)?.locale;
   const speechLocale=(selectedLocale&&selectedLocale!=="multi"?selectedLocale:browserVoices.find(v=>"browser:"+v.voiceURI===voiceId)?.lang)||voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0]||language;
   text=spokenText(text,speechLocale);if(!sound||!text)return;
   stopVoice();const ticket=voiceGeneration.current;
+  // The existing automatic mode prioritizes Dell Piper when configured;
+  // after any failure it falls back to an installed voice or EDUAI.
+  if(config.ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
+   const ctl=new AbortController();piperAbort.current=ctl;
+   const timer=window.setTimeout(()=>ctl.abort(),22000);
+   try{
+    const blob=await requestPiperAudio(text,ctl.signal);
+    if(ticket!==voiceGeneration.current)return;
+    audioUrl.current=URL.createObjectURL(blob);
+    const player=new Audio(audioUrl.current);audioRef.current=player;
+    lips.audio(player,text.slice(0,700),[]);
+    player.onplay=()=>setSpeaking(true);
+    player.onended=stopVoice;player.onerror=stopVoice;
+    void meter.start(player);
+    await player.play();
+    return;
+   }catch{
+    if(ticket!==voiceGeneration.current)return;
+    setNotice("Piper Dell no disponible; se utilizará una voz de respaldo.");
+   }finally{
+    clearTimeout(timer);
+    if(piperAbort.current===ctl)piperAbort.current=null;
+   }
+  }
   // Automatic mode is local first. A cloud voice is used only if there is no
   // installed Spanish voice. "browser:auto" is strictly device-only.
   const installed=selectBrowserVoice(browserVoices,voiceId,speechLocale);
-  const canRemote=!voiceId.startsWith("browser:")||(voiceId==="browser:preferred"&&!installed);
+  const canRemote=(!voiceId.startsWith("browser:")&&!voiceId.startsWith("piper:"))||(voiceId==="browser:preferred"&&!installed);
   if(canRemote&&config.voice){
    try{
     const remoteId=voiceId==="browser:preferred"?"es-MX-DaliaNeural":voiceId;
@@ -109,18 +135,19 @@ export default function SuuConsole(){
    {chatOpen&&<aside className="sidePanel chatPanel"><div className="chatHeader"><div><strong>Conversa con SUU</strong><small>Asistente inteligente · {usedProvider||domains[domain]}</small></div><button onClick={()=>void inspectBridge()} title="Consultar herramientas" aria-label="Consultar herramientas"><CircleHelp size={18}/></button></div><div className="messages" ref={scroll} aria-live="polite">{messages.map((m,i)=><div key={i} className={"bubble "+(m.role==="assistant"?"assistant":"user")}><small>{m.role==="assistant"?"SUU":"TÚ"}</small><p>{m.content}</p></div>)}{sending&&<p className="muted">SUU está procesando tu solicitud…</p>}</div>{config.livekit&&config.authenticated&&!fairMode&&<SuuLiveKit noiseReduction={noiseReduction} onJoin={()=>{stopVoice();recognition.current?.stop();microphone.stop();setListening(false)}} onAudio={(active,level)=>{liveSpeech.current=active;setSpeaking(active);setEnergy(level)}} onError={setNotice}/>}<div className="suggestions">{[{label:"Explica la IA",domain:"general" as Domain,text:"¿Qué puedes hacer hoy?"},{label:"Simulaciones científicas",domain:"scientific" as Domain,text:"¿Cómo organizar una simulación de física?"},{label:"Generar imágenes",domain:"visual" as Domain,text:"¿Cómo crear una infografía científica?"}].map(item=><button key={item.label} onClick={()=>{setDomain(item.domain);void send(item.text,item.domain)}}>{item.label}<ChevronRight size={14}/></button>)}</div>{notice&&<div className="notice" role="status">{notice}<button aria-label="Cerrar notificación" onClick={()=>setNotice("")}>×</button></div>}{listening&&<small className="muted" role="status">{microphone.mode==="standard"?"Micrófono · reducción estándar activa":"Micrófono · entrada gestionada por el navegador"}</small>}<form className="composer" onSubmit={e=>{e.preventDefault();void send()}}><textarea value={draft} onChange={e=>setDraft(e.target.value)} rows={2} placeholder="Escribe o habla con SUU..." maxLength={4500} aria-label="Mensaje" onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send()}}}/><div className="composeActions"><div><button type="button" onClick={toggleMic} aria-label={listening?"Detener micrófono":"Activar micrófono"}>{listening?<MicOff size={18}/>:<Mic size={18}/>}</button><button type="button" onClick={()=>{setSound(v=>!v);stopVoice()}} aria-label={sound?"Silenciar":"Activar sonido"}>{sound?<Volume2 size={18}/>:<VolumeX size={18}/>}</button><button type="button" onClick={stopVoice} aria-label="Detener voz"><Square size={15}/></button></div><button className="send" disabled={!draft.trim()||sending||!config.authenticated} aria-label="Enviar mensaje"><Send size={19}/></button></div></form></aside>}
   </div><footer className="footer"><span>● SUU SYSTEMS</span><span>VISUAL ENGINE · EDUAI · SCIENTIFICBRAIN</span><span>© INNOVA SPACE EDUCATION</span></footer>
   {face.status==="error"&&face.error&&<div className="cameraError" role="alert">{face.error} <button onClick={face.stop}>Cerrar</button></div>}
-  {voiceOnly&&config.authenticated&&<SuuVoiceMode onClose={()=>setVoiceOnly(false)} sttAvailable={Boolean(config.stt)} onTurn={(user,reply,provider)=>{setMessages(prev=>[...prev,{role:"user" as const,content:user},{role:"assistant" as const,content:reply}].slice(-16));setUsedProvider(provider)}} noiseReduction={noiseReduction} initial={messages} domain={domain} language={language} voiceId={voiceId} quality={quality} solid={solid} tracking={face.motion} cameraActive={face.status==="tracking"}/>}
-  {fairMode&&config.authenticated&&<SuuFairMode onClose={()=>setFairMode(false)} sttAvailable={Boolean(config.stt)} onTurn={(user,reply,provider)=>{setMessages(prev=>[...prev,{role:"user" as const,content:user},{role:"assistant" as const,content:reply}].slice(-16));setUsedProvider(provider)}} initial={[]} noiseReduction={noiseReduction} language={language} voiceId={voiceId} quality={quality} solid={solid}/>}
+  {voiceOnly&&config.authenticated&&<SuuVoiceMode onClose={()=>setVoiceOnly(false)} ttsLocal={Boolean(config.ttsLocal)} sttAvailable={Boolean(config.stt)} onTurn={(user,reply,provider)=>{setMessages(prev=>[...prev,{role:"user" as const,content:user},{role:"assistant" as const,content:reply}].slice(-16));setUsedProvider(provider)}} noiseReduction={noiseReduction} initial={messages} domain={domain} language={language} voiceId={voiceId} quality={quality} solid={solid} tracking={face.motion} cameraActive={face.status==="tracking"}/>}
+  {fairMode&&config.authenticated&&<SuuFairMode onClose={()=>setFairMode(false)} ttsLocal={Boolean(config.ttsLocal)} sttAvailable={Boolean(config.stt)} onTurn={(user,reply,provider)=>{setMessages(prev=>[...prev,{role:"user" as const,content:user},{role:"assistant" as const,content:reply}].slice(-16));setUsedProvider(provider)}} initial={[]} noiseReduction={noiseReduction} language={language} voiceId={voiceId} quality={quality} solid={solid}/>}
   {settings&&<div className="modalShade" onMouseDown={e=>{if(e.target===e.currentTarget)setSettings(false)}}><div className="modalCard" role="dialog" aria-modal="true" aria-label="Configuración SUU"><div className="modalHeader"><h2>Configuración de SUU</h2><button onClick={()=>setSettings(false)} aria-label="Cerrar ajustes">×</button></div><label>Calidad gráfica<select value={quality} onChange={e=>setQuality(e.target.value as "eco"|"high")}><option value="high">Alta calidad</option><option value="eco">Economía de recursos</option></select></label>{microphone.headphonesActive&&<><label>Reducir ruido de fondo<input type="checkbox" checked={noiseReduction} onChange={e=>setNoiseReduction(e.target.checked)}/></label><p className="muted">Disponible con auriculares detectados como salida predeterminada. Se aplica en la próxima activación del micrófono. Al desconectarlos, se desactiva. Si pierde palabras, puedes apagarlo.</p></>}<label>Idioma<select value={language} onChange={e=>setLanguage(e.target.value)}><option value="es-CL">Español Chile</option><option value="en-US">English</option><option value="pt-BR">Português</option><option value="fr-FR">Français</option></select></label><label>Voz de SUU<select aria-label="Voz de SUU" value={voiceId} onChange={e=>setVoiceId(e.target.value)}>
- <option value="browser:preferred">Automática · voz local primero, respaldo EDUAI si no hay</option>
+ <option value="browser:preferred">Automática · Piper Dell → navegador → EDUAI</option>
+ <option value="piper:daniela">Daniela · Piper en el Dell (voz femenina es-AR)</option>
  <option value="browser:auto">Solo instalada en el dispositivo · sin TTS externo</option>
  <optgroup label="Voces estándar de EDUAI">{voices.filter(v=>v.source==="eduai").map(v=><option key={v.id} value={v.id}>{v.label}</option>)}</optgroup>
  {voices.some(v=>v.source==="elevenlabs")&&<optgroup label="Voz premium">{voices.filter(v=>v.source==="elevenlabs").map(v=><option key={v.id} value={v.id}>{v.label}</option>)}</optgroup>}
  <optgroup label="Voces de este navegador">{browserVoices.map(v=><option key={v.voiceURI} value={"browser:"+v.voiceURI}>{v.name} · {v.lang} · {v.localService?"instalada":"en línea"}</option>)}</optgroup>
- </select></label><p className="muted">La voz automática usa primero voces instaladas y evita /api/voice. Solo usa EDUAI si no hay una voz compatible. El modo «Solo instalada» nunca solicita TTS externo. El reconocimiento del micrófono se realiza localmente cuando el navegador y su paquete de idioma lo permiten; en otros casos el navegador puede usar un servicio remoto. La sincronización usa eventos por palabra cuando están disponibles y una estimación como respaldo.</p>
+ </select></label><p className="muted">La voz automática prioriza Piper en el Dell cuando está habilitado y usa el navegador o EDUAI como respaldo. Si Piper no está configurado, conserva el comportamiento anterior. El modo «Solo instalada» nunca solicita TTS externo. El reconocimiento del micrófono se realiza localmente cuando el navegador y su paquete de idioma lo permiten; en otros casos el navegador puede usar un servicio remoto. La sincronización usa eventos por palabra cuando están disponibles y una estimación como respaldo.</p>
  <label>Motor principal <span style={{fontSize:11,color:"#9ac8df"}}>{config.providers?.find(p=>p.configured)?.name||"Sin configurar"}</span></label>
  <div className="providerStatusList" aria-label="Proveedores de IA">{config.providers?.map(p=><div key={p.id}><strong>{p.name}</strong><span>{p.configured?"Configurado · sin verificar":"Sin clave"}</span>{p.model&&<small>{p.model}</small>}</div>)}</div>
- <p className="muted">Reconocimiento: {config.stt?"STT CPU del Dell (activo)":"navegador (el STT Dell requiere instalación y Cloudflare Access)"}. Prioridad IA: Dell (Qwen CPU) → Groq → SambaNova → OpenRouter → Gemini. Las voces clonadas privadas de EDUAI requieren autorización individual y autenticación MFA, por lo que no se copian automáticamente.</p><label>Superficie 3D sólida<input type="checkbox" checked={solid} onChange={e=>setSolid(e.target.checked)}/></label>{config.authenticated&&<button className="logout" onClick={()=>void logout()}><LogOut size={16}/> Cerrar sesión</button>}<p className="muted">Las credenciales de servicios externos se configuran en Vercel y nunca se exponen en el navegador.</p></div></div>}
+ <p className="muted">Síntesis: {config.ttsLocal?"Piper Dell configurado":"navegador/EDUAI hasta activar Piper"}. Reconocimiento: {config.stt?"STT CPU del Dell (activo)":"navegador (el STT Dell requiere instalación y Cloudflare Access)"}. Prioridad IA: Dell (Qwen CPU) → Groq → SambaNova → OpenRouter → Gemini. Las voces clonadas privadas de EDUAI requieren autorización individual y autenticación MFA, por lo que no se copian automáticamente.</p><label>Superficie 3D sólida<input type="checkbox" checked={solid} onChange={e=>setSolid(e.target.checked)}/></label>{config.authenticated&&<button className="logout" onClick={()=>void logout()}><LogOut size={16}/> Cerrar sesión</button>}<p className="muted">Las credenciales de servicios externos se configuran en Vercel y nunca se exponen en el navegador.</p></div></div>}
   {!booting&&!config.authenticated&&!demo&&<div className="modalShade authShade"><section className="loginCard"><div className="loginIcon"><BrainCircuit size={33}/></div><small>INNOVA SPACE EDUCATION</small><h2>Iniciar interfaz SUU</h2><p>Experiencia holográfica 3D. La conversación con IA requiere un código privado y claves de servidor.</p><form onSubmit={e=>void login(e)}><label htmlFor="suuCode">Código de acceso</label><input id="suuCode" type="password" autoComplete="off" value={code} onChange={e=>setCode(e.target.value)} placeholder="Código configurado en Vercel" required/><button className="loginButton" disabled={!config.securityReady||!code}><Play size={16}/> Entrar a SUU</button></form>{loginError&&<p role="alert" className="error">{loginError}</p>}{!config.securityReady&&<p className="muted">Faltan SUU_ACCESS_CODE y SUU_SESSION_SECRET en Vercel.</p>}<button className="demoButton" onClick={()=>setDemo(true)}>Explorar demostración visual (sin IA)</button></section></div>}
  </main>
 }

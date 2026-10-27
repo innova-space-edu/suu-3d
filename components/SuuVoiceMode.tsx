@@ -6,6 +6,7 @@ import {spokenText,fairSpokenText,fairAudienceText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import {selectBrowserVoice} from "@/lib/browser-voice";
+import {requestPiperAudio} from "@/lib/piper-client";
 import {preferOnDeviceRecognition} from "@/lib/local-recognition";
 import {fairResponse} from "@/lib/fair-response";
 import dynamic from "next/dynamic";
@@ -20,8 +21,8 @@ type SpeechResult={results:Record<number,Record<number,{transcript:string}>>};
 type Recognition={processLocally?:boolean;lang:string;continuous:boolean;interimResults:boolean;onresult:((event:SpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;onspeechstart:(()=>void)|null;onspeechend:(()=>void)|null;start(track?:MediaStreamTrack):void;stop():void};
 type RecognitionConstructor=new()=>Recognition;
 export type FairVoiceCommand={id:number;text:string};
-type Props={sttAvailable?:boolean;modeLabel?:string;fairMode?:boolean;enabled?:boolean;announcement?:FairVoiceCommand|null;onAnnouncementEnd?:(success:boolean)=>void;onAvailable?:(available:boolean)=>void;noiseReduction:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];domain:Domain;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive:boolean};
-export default function SuuVoiceMode({sttAvailable=false,modeLabel,fairMode=false,enabled,announcement,onAnnouncementEnd,onAvailable,noiseReduction,onClose,onTurn,initial,domain,voiceId,language,quality,solid,tracking,cameraActive}:Props){
+type Props={ttsLocal?:boolean;sttAvailable?:boolean;modeLabel?:string;fairMode?:boolean;enabled?:boolean;announcement?:FairVoiceCommand|null;onAnnouncementEnd?:(success:boolean)=>void;onAvailable?:(available:boolean)=>void;noiseReduction:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];domain:Domain;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive:boolean};
+export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabel,fairMode=false,enabled,announcement,onAnnouncementEnd,onAvailable,noiseReduction,onClose,onTurn,initial,domain,voiceId,language,quality,solid,tracking,cameraActive}:Props){
  const [phase,setPhase]=useState<"idle"|"listening"|"thinking"|"speaking"|"error">("idle");
  const [subtitle,setSubtitle]=useState("Activa el micrófono para conversar con SUU.");
  const caption=useRef<HTMLParagraphElement|null>(null);
@@ -32,13 +33,14 @@ export default function SuuVoiceMode({sttAvailable=false,modeLabel,fairMode=fals
  const meter=useSpeechMeter(setEnergy);
  const lips=useLipSync();
  const speechGeneration=useRef(0),recognitionGeneration=useRef(0),humanSpeaking=useRef(false),announcing=useRef(false);
+ const piperAbort=useRef<AbortController|null>(null);
  const endRef=useRef(onAnnouncementEnd),availableRef=useRef(onAvailable);endRef.current=onAnnouncementEnd;availableRef.current=onAvailable;
  const reportAvailable=()=>availableRef.current?.(!stopSignal.current&&!announcing.current&&!humanSpeaking.current&&(phaseRef.current==="idle"||phaseRef.current==="listening"));
  const recognizer=useRef<Recognition|null>(null),audio=useRef<HTMLAudioElement|null>(null),audioUrl=useRef<string|null>(null);
  const onTurnRef=useRef(onTurn),stopSignal=useRef(false),history=useRef(initial.slice(-14)),abort=useRef<AbortController|null>(null),timer=useRef<ReturnType<typeof setInterval>|null>(null),phaseRef=useRef("idle"),listeningRef=useRef(false);
  onTurnRef.current=onTurn;
  const setPhaseNow=(next:typeof phase)=>{phaseRef.current=next;setPhase(next);reportAvailable()};
- const releaseAudio=useCallback(()=>{speechGeneration.current++;lips.stop();meter.stop();if(audio.current){audio.current.onended=null;audio.current.onerror=null;audio.current.pause();audio.current.src="";audio.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}if(timer.current){clearInterval(timer.current);timer.current=null}if(typeof window!=="undefined")window.speechSynthesis?.cancel();setEnergy(0)},[meter.stop,lips.stop]);
+ const releaseAudio=useCallback(()=>{speechGeneration.current++;piperAbort.current?.abort();piperAbort.current=null;lips.stop();meter.stop();if(audio.current){audio.current.onended=null;audio.current.onerror=null;audio.current.pause();audio.current.src="";audio.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}if(timer.current){clearInterval(timer.current);timer.current=null}if(typeof window!=="undefined")window.speechSynthesis?.cancel();setEnergy(0)},[meter.stop,lips.stop]);
  const stop=useCallback(()=>{stopSignal.current=true;stt.cancel();abort.current?.abort();abort.current=null;recognitionGeneration.current++;humanSpeaking.current=false;announcing.current=false;recognizer.current?.stop();microphone.stop();recognizer.current=null;listeningRef.current=false;releaseAudio();setPhaseNow("idle");setSubtitle("Conversación pausada. Pulsa para reanudar.");},[releaseAudio,microphone.stop,stt.cancel]);
  useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();microphone.stop();releaseAudio()},[releaseAudio,microphone.stop]);
  const finishSpeech=(success=true)=>{releaseAudio();if(announcing.current){announcing.current=false;endRef.current?.(success)}setPhaseNow("idle");restart()};
@@ -51,11 +53,33 @@ export default function SuuVoiceMode({sttAvailable=false,modeLabel,fairMode=fals
   if(!text){finishSpeech();return}
   if(muted){finishSpeech(false);return}
   releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(displayText);
+  // Preserve lip motion and microphone cycles with locally synthesized WAV.
+  if(ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
+   const ctl=new AbortController();piperAbort.current=ctl;
+   const timeout=window.setTimeout(()=>ctl.abort(),22000);
+   try{
+    const blob=await requestPiperAudio(text,ctl.signal);
+    if(stopSignal.current||ticket!==speechGeneration.current)return;
+    audioUrl.current=URL.createObjectURL(blob);
+    const player=new Audio(audioUrl.current);audio.current=player;
+    lips.audio(player,text.slice(0,700),[]);
+    player.onended=()=>finishSpeech();player.onerror=()=>finishSpeech(false);
+    void meter.start(player);
+    await player.play();
+    return;
+   }catch{
+    if(stopSignal.current||ticket!==speechGeneration.current)return;
+    // Continue into existing local browser voice / EDUAI fallback.
+   }finally{
+    window.clearTimeout(timeout);
+    if(piperAbort.current===ctl)piperAbort.current=null;
+   }
+  }
   const options=window.speechSynthesis?.getVoices()||[];
   const installed=selectBrowserVoice(options,voiceId,speechLocale);
   // browser:preferred is local first with an explicit remote fallback only
   // when there is no installed voice. browser:auto is strictly device-only.
-  const requestRemote=!voiceId.startsWith("browser:")||(voiceId==="browser:preferred"&&!installed);
+  const requestRemote=(!voiceId.startsWith("browser:")&&!voiceId.startsWith("piper:"))||(voiceId==="browser:preferred"&&!installed);
   if(requestRemote){
    try{
     const remoteId=voiceId==="browser:preferred"?"es-MX-DaliaNeural":voiceId;
