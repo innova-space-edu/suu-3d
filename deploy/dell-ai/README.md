@@ -9,6 +9,15 @@ Este paquete agrega un servidor de inferencia pequeño mediante llama.cpp, compa
 - Reserva máxima del contenedor: 3 GB RAM y 2 CPU, 1 consulta a la vez, contexto 2048 tokens.
 - Sigue habiendo latencia CPU y los modelos pequeños pueden equivocarse. Validar en pruebas antes de usar como asistente educativo.
 
+## Integración con el MCP administrativo del Dell
+
+Para el despliegue inicial con comprobaciones de seguridad y el registro
+**limitado** del contenedor `suu-llm` en la allowlist del agente administrativo
+V12.2, consultar [admin/README.md](admin/README.md). Este procedimiento
+mantiene la autorización de cada operación desde Tailscale Serve.
+El catálogo de instalaciones nuevas sigue pendiente de compatibilidad
+con el esquema real del agente; no se habilita una terminal root genérica.
+
 ## Preparación en el Dell (SSH con autorización del propietario)
 
 Copiar la carpeta `deploy/dell-ai` desde este repositorio al Dell, manteniendo `compose.yaml`.
