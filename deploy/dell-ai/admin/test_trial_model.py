@@ -61,7 +61,7 @@ class TrialTests(unittest.TestCase):
             model_sha = hashlib.sha256(b"test-model").hexdigest()
             report = target / "report.json"
             report.write_text(json.dumps({"candidate_sha": model_sha, "preset": "current", "baseline": scored(4), "candidate": scored(10),
-                                          "voice_probe": {"model_total_seconds": 8, "piper_rtf": .3},
+                                          "voice_probe": {"model_total_seconds": 8, "first_audio_ready_seconds": 3, "piper_rtf": .3},
                                           "image_id": "tested-image", "image_digest": "ghcr.io/ggml-org/llama.cpp@sha256:" + "a" * 64}))
             old_hash = hashlib.sha256(original_compose.encode()).hexdigest()
             calls = []
@@ -89,8 +89,39 @@ class TrialTests(unittest.TestCase):
                     self.fail("failed container must not be yielded")
             cleanup.assert_called_once()
             self.assertEqual(cleanup.call_args.args[0], ["docker", "rm", "-f", "temporary-id"])
-            self.assertIn("127.0.0.1:8095:8080", launch.call_args.args)
+            self.assertIn("127.0.0.1:8097:8080", launch.call_args.args)
             self.assertNotIn("private-key", launch.call_args.args)
+
+    def test_thread_count_is_applied_to_container_and_profile(self):
+        image = "ghcr.io/ggml-org/llama.cpp@sha256:" + "a" * 64
+        text = trial.new_profile("CUSTOM=keep\n", image, 4)
+        self.assertIn("SUU_LLM_THREADS=4\n", text)
+        self.assertIn("SUU_LLM_CPUS=4\n", text)
+        with patch.object(trial, "docker", return_value="temporary-id") as launch, \
+             patch.object(trial, "wait_ready"), patch.object(trial.subprocess, "run"):
+            with trial.candidate_container(["docker"], image, "secret", 4):
+                pass
+        args = launch.call_args.args
+        self.assertEqual(args[args.index("--cpus") + 1], "4")
+        self.assertEqual(args[args.index("--threads") + 1], "4")
+
+    def test_slow_first_audio_cannot_activate_even_with_good_quality(self):
+        with tempfile.TemporaryDirectory() as folder:
+            report = Path(folder) / "report.json"
+            report.write_text(json.dumps({"candidate_sha": trial.MODEL_SHA, "preset": "current",
+                "baseline": scored(5), "candidate": scored(10),
+                "voice_probe": {"model_total_seconds": 36, "first_audio_ready_seconds": 14.2, "piper_rtf": .55}}))
+            with patch.object(trial, "docker") as docker:
+                with self.assertRaisesRegex(ValueError, "8 s"):
+                    trial.activate([], report, "secret")
+                docker.assert_not_called()
+
+    def test_physical_core_detection_does_not_count_smt_twice(self):
+        cpuinfo = "physical id : 0\ncore id : 0\n\nphysical id : 0\ncore id : 0\n\nphysical id : 0\ncore id : 1"
+        with patch.object(Path, "read_text", return_value=cpuinfo):
+            self.assertEqual(trial.physical_cores(), 2)
+        with patch.object(Path, "read_text", return_value="unknown topology"):
+            self.assertEqual(trial.physical_cores(), 2)
 
     def test_bad_quality_never_reaches_docker_or_writes_profile(self):
         with tempfile.TemporaryDirectory() as folder:

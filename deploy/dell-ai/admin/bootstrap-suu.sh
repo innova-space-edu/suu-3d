@@ -47,6 +47,7 @@ if [[ -e "$target/compose.yaml" ]]; then
     # Keep this list fixed; reject unknown/locally-customized Compose files.
     known_previous=(
       "c7a2b3f0f558b4c50aa658ae524f4156fca08a51"
+      "2c15ca5eb19b41e6ba0db5f209290320ee0c710f"
       "121a1ef039953123b19c42585325ba54d2342c3b"
       "c0c051513cb364734f28cb04e67d0e10fdd88ff0"
     )

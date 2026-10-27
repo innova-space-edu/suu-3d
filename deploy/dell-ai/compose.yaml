@@ -11,7 +11,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    cpus: "2.0"
+    cpus: "${SUU_LLM_CPUS:-2.0}"
     mem_limit: "${SUU_LLM_MEMORY:-3g}"
     pids_limit: 150
     ports:
@@ -31,7 +31,7 @@ services:
       - "--ctx-size"
       - "2048"
       - "--threads"
-      - "2"
+      - "${SUU_LLM_THREADS:-2}"
       - "--parallel"
       - "1"
       - "--n-predict"
