@@ -26,6 +26,42 @@ Navegador (MediaRecorder, voz detectada y duración máxima 15 s)
   (puede depender de servicios remotos según el navegador).
 - TTS de respuesta utiliza prioritariamente una voz instalada en el equipo, ya existente.
 
+## Reparación del primer intento fallido (PyAV)
+
+La primera ejecución del 27-10-2026 se detuvo durante la construcción de
+la imagen `python:3.11-slim`: `pip` intentó compilar `av==14.4.0`
+desde el paquete fuente y faltaron herramientas de desarrollo/FFmpeg 7.
+
+**Corrección:** `av==16.0.1` dispone de wheel precompilado
+`cp311-manylinux_2_28` para Linux x86_64/ARM64. El Dockerfile usa
+`pip install --only-binary=:all:` para evitar compilaciones fuente
+accidentales: el error por ausencia de un wheel compatible será explícito.
+
+El instalador reconoce **únicamente** los cinco archivos originales
+de la revisión `9d9bcec1` que copió al primer intento fallido, respalda
+las diferencias reconocidas, y actualiza los archivos de configuración.
+Rechaza archivos personalizados y enlaces simbólicos.
+
+Se preservan `~/suu-stt/models`, `~/suu-stt/.env` y
+`~/suu-stt/secrets/stt_api_key.txt`. La clave STT no se genera
+nuevamente si ya existe. No borrar esa carpeta ni repetir con `sudo bash`.
+
+Para recuperar:
+
+```bash
+cd ~/suu-3d
+git pull --ff-only
+cd deploy/dell-stt
+bash bootstrap.sh --dry-run
+bash bootstrap.sh --apply
+sudo docker ps --filter name=suu-stt
+curl -fsS http://127.0.0.1:8095/health
+```
+
+La primera instalación termina solo cuando la imagen construye, el
+modelo está cacheado y el contenedor comienza a ejecutarse.
+Si aparece otro error de dependencias, conservar el log sin credenciales.
+
 ## 1. Instalar exclusivamente STT en Debian
 
 ```bash
