@@ -28,8 +28,22 @@ class PolicyTests(unittest.TestCase):
         self.assertNotIn("suu-llm", before["docker"])
         self.assertEqual(after, module.prepare(after))
 
+    def test_catalog_mapping_is_preserved_without_editing_recipes(self):
+        before = {
+            "docker": ["intranet-portal"],
+            "catalog": {"suu-llm": {"compose_sha256": "fixed", "requires_approval": True}},
+            "projects": {"intranet": ["portal"]},
+            "identity": {"owner_only": True}
+        }
+        after = module.prepare(before)
+        self.assertEqual(after["catalog"], before["catalog"])
+        self.assertEqual(after["identity"], before["identity"])
+        self.assertEqual(after["projects"], before["projects"])
+        self.assertEqual(after["docker"], ["intranet-portal", "suu-llm"])
+        self.assertEqual(before["docker"], ["intranet-portal"])
+
     def test_fail_closed_unknown_formats(self):
-        for value in (None, {}, {"docker": "all"}, {"docker": ["safe"], "catalog": {}},
+        for value in (None, {}, {"docker": "all"}, {"docker": ["safe"], "catalog": "unexpected"},
                       {"docker": ["safe"], "projects": []},
                       {"docker": [3]}):
             with self.subTest(value=value):
