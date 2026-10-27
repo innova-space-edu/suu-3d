@@ -56,7 +56,7 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
   // Preserve lip motion and microphone cycles with locally synthesized WAV.
   if(ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
    const ctl=new AbortController();piperAbort.current=ctl;
-   const timeout=window.setTimeout(()=>ctl.abort(),22000);
+   const timeout=window.setTimeout(()=>ctl.abort(),47000);
    try{
     const blob=await requestPiperAudio(text,ctl.signal);
     if(stopSignal.current||ticket!==speechGeneration.current)return;
@@ -67,8 +67,9 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
     void meter.start(player);
     await player.play();
     return;
-   }catch{
+   }catch(err){
     if(stopSignal.current||ticket!==speechGeneration.current)return;
+    console.warn("[SUU Piper] Voz de respaldo:",err instanceof Error?err.message:"Error desconocido");
     // Continue into existing local browser voice / EDUAI fallback.
    }finally{
     window.clearTimeout(timeout);
