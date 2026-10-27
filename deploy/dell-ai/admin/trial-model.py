@@ -3,6 +3,7 @@
 No arbitrary host commands, no public ports, no secret output.
 """
 import argparse
+import errno
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import hashlib
@@ -28,6 +29,8 @@ MODEL_BYTES = 2889513696
 URL = ("https://huggingface.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF/resolve/"
        + REVISION + "/Qwen_Qwen3-4B-Instruct-2507-Q5_K_M.gguf")
 ORIGINAL_COMPOSE_SHA = "c5d4bad2aa53b2553d790b58d2345a6027ca3ef7601c9e8ebd2d6efbb1a7cfc2"
+PREVIOUS_COMPOSE_SHA = "a07a72d5df19f80b2729bd47b6b3d218625b469c12da6c69218a21f20cba8137"
+TRIAL_PORT = 8097
 GIB = 1024 ** 3
 spec = importlib.util.spec_from_file_location("quality", ROOT / "benchmark-quality.py")
 quality = importlib.util.module_from_spec(spec)
@@ -99,10 +102,12 @@ def private_json(path, value):
         json.dump(value, stream, ensure_ascii=False, indent=2)
 
 
-def new_profile(text, image):
+def new_profile(text, image, threads=2):
+    if threads not in (2, 4, 6):
+        raise ValueError("CPU admitidas: 2, 4 o 6")
     if not re.fullmatch(r"ghcr\.io/ggml-org/llama\.cpp@sha256:[a-f0-9]{64}", image):
         raise ValueError("Digest de imagen no admitido")
-    values = {"SUU_MODEL_FILE": MODEL, "SUU_LLM_MEMORY": "5g", "SUU_LLM_IMAGE": image}
+    values = {"SUU_MODEL_FILE": MODEL, "SUU_LLM_MEMORY": "5g", "SUU_LLM_IMAGE": image, "SUU_LLM_THREADS": str(threads), "SUU_LLM_CPUS": str(threads)}
     lines = [line for line in text.splitlines() if line.split("=", 1)[0].strip() not in values]
     return "\n".join(lines + [f"{key}={value}" for key, value in values.items()]) + "\n"
 
@@ -168,7 +173,7 @@ def voice_probe(token):
                 "piper_rtf": round((time.perf_counter() - synthesis_start) / max(seconds, .001), 3)}
     with ThreadPoolExecutor(max_workers=1) as pool:
         pending = []
-        result = quality.completion(8095, token, "Explica en tres frases por qué los planetas orbitan alrededor del Sol.",
+        result = quality.completion(TRIAL_PORT, token, "Explica en tres frases por qué los planetas orbitan alrededor del Sol.",
                                     quality.PRESETS["current"], lambda text: pending.append(pool.submit(synthesize, text)))
         measured = pending[0].result() if pending else {}
         return {**measured, "model_total_seconds": result["total_seconds"],
@@ -186,7 +191,7 @@ def score(rows):
 def validate_compose():
     source = ROOT.parent / "compose.yaml"
     current = regular(TARGET / "compose.yaml")
-    if digest(current) not in (ORIGINAL_COMPOSE_SHA, digest(source)):
+    if digest(current) not in (ORIGINAL_COMPOSE_SHA, PREVIOUS_COMPOSE_SHA, digest(source)):
         raise ValueError("Compose local personalizado: no se sobrescribe")
     return source
 
@@ -202,7 +207,7 @@ def restore(cmd, backup, token):
         raise ValueError("Respaldo fuera de la carpeta autorizada")
     for name in ("compose.yaml", ".env"):
         regular(backup / name)
-    if digest(backup / "compose.yaml") not in (ORIGINAL_COMPOSE_SHA, digest(ROOT.parent / "compose.yaml")):
+    if digest(backup / "compose.yaml") not in (ORIGINAL_COMPOSE_SHA, PREVIOUS_COMPOSE_SHA, digest(ROOT.parent / "compose.yaml")):
         raise ValueError("Compose de respaldo desconocido")
     for name in ("compose.yaml", ".env"):
         regular(TARGET / name)
@@ -219,15 +224,16 @@ def activate(cmd, report_path, token):
         raise ValueError("El candidato necesita al menos 9/10 coincidencias y superar al actual; revisar el informe antes de activar")
     probe = report.get("voice_probe", {})
     if ("error" in probe or "skipped" in probe or probe.get("model_total_seconds", 999) > 45
-            or probe.get("piper_rtf", 999) >= 1):
-        raise ValueError("Falta una prueba de voz correcta dentro del presupuesto de 45 segundos")
+            or probe.get("piper_rtf", 999) >= 1 or probe.get("first_audio_ready_seconds", 999) > 8):
+        raise ValueError("La voz debe estar lista en ≤8 s y el texto completo en ≤45 s, con RTF <1")
     require_memory(memory_available())
     model = regular(TARGET / "models" / MODEL)
     if digest(model) != MODEL_SHA:
         raise ValueError("El candidato cambió desde el ensayo")
     source = validate_compose()
     image = report["image_digest"]
-    content = new_profile(regular(TARGET / ".env").read_text(), image)
+    threads = report.get("resources", {}).get("candidate_cpus", 2)
+    content = new_profile(regular(TARGET / ".env").read_text(), image, threads)
     tested = docker(cmd, "image", "inspect", "--format", "{{.Id}}", image)
     if tested != report["image_id"]:
         raise ValueError("La imagen no coincide con la probada")
@@ -252,29 +258,40 @@ def activate(cmd, report_path, token):
 
 
 @contextmanager
-def candidate_container(cmd, image_id, token):
+def candidate_container(cmd, image_id, token, threads=2):
     name = f"suu-llm-candidate-{os.getpid()}-{time.time_ns()}"
     try:
         container = docker(cmd, "run", "-d", "--name", name, "--init", "--read-only", "--cap-drop", "ALL",
-                           "--security-opt", "no-new-privileges:true", "--cpus", "2", "--memory", "5g", "--pids-limit", "150",
-                           "--user", f"{os.getuid()}:{os.getgid()}", "--network", "portal_default", "-p", "127.0.0.1:8095:8080",
+                           "--security-opt", "no-new-privileges:true", "--cpus", str(threads), "--memory", "5g", "--pids-limit", "150",
+                           "--user", f"{os.getuid()}:{os.getgid()}", "--network", "portal_default", "-p", f"127.0.0.1:{TRIAL_PORT}:8080",
                            "-v", f"{TARGET / 'models'}:/models:ro", "-v", f"{TARGET / 'secrets/suu_api_key.txt'}:/run/secrets/suu_api_key:ro",
                            image_id, "--host", "0.0.0.0", "--port", "8080", "--model", f"/models/{MODEL}", "--alias", "suu-local",
-                           "--ctx-size", "2048", "--threads", "2", "--parallel", "1", "--n-predict", "256",
+                           "--ctx-size", "2048", "--threads", str(threads), "--parallel", "1", "--n-predict", "256",
                            "--reasoning", "off", "--no-webui", "--api-key-file", "/run/secrets/suu_api_key")
     except (Exception, KeyboardInterrupt):
         subprocess.run(cmd + ["rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         raise
     try:
-        wait_ready(cmd, container, 8095, token)
+        wait_ready(cmd, container, TRIAL_PORT, token)
         yield container
     finally:
         subprocess.run(cmd + ["rm", "-f", container], check=True, stdout=subprocess.DEVNULL)
 
 
+def physical_cores():
+    pairs = set()
+    for cpu in Path("/proc/cpuinfo").read_text().split("\n\n"):
+        fields = dict(line.split(":", 1) for line in cpu.splitlines() if ":" in line)
+        fields = {key.strip(): value.strip() for key, value in fields.items()}
+        if "physical id" in fields and "core id" in fields:
+            pairs.add((fields["physical id"], fields["core id"]))
+    return len(pairs) or 2  # Unknown topology: do not grant more CPUs.
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--tune", action="store_true", help="Comparar CPU 2/4/6 con calentamiento; no activa producción")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--activate", type=Path)
     action.add_argument("--rollback", type=Path)
@@ -285,7 +302,7 @@ def main():
         raise ValueError("Falta la instalación existente ~/suu-ai")
     available = memory_available()
     print(json.dumps({"available_gib": round(available/GIB, 2), "candidate_limit_gib": 5,
-                      "cpu_limit": 2, "model": MODEL, "port_trial": 8095}))
+                      "cpu_limit": 2, "model": MODEL, "port_trial": TRIAL_PORT}))
     if not args.apply:
         print("Previsualización. --apply descarga y compara sin activar; --activate INFORME --apply activa tras revisión.")
         return
@@ -302,7 +319,12 @@ def main():
         return
     require_memory(available)
     with socket.socket() as check:
-        check.bind(("127.0.0.1", 8095))
+        try:
+            check.bind(("127.0.0.1", TRIAL_PORT))
+        except OSError as error:
+            if error.errno == errno.EADDRINUSE:
+                raise ValueError(f"El puerto local {TRIAL_PORT} está ocupado; no se detuvo ningún servicio") from None
+            raise
     current = inspect(cmd, "suu-llm")
     image_id = current["Image"]
     image_info = json.loads(docker(cmd, "image", "inspect", image_id))[0]
@@ -312,27 +334,42 @@ def main():
     download()
     print("Evaluando modelo actual sin ayudas de SUU…", flush=True)
     baseline = suite(8094, token, "current", "current")
-    require_memory(memory_available())
-    with candidate_container(cmd, image_id, token) as container:
-        print("Evaluando candidato 4B…", flush=True)
-        candidate = suite(8095, token, "qwen3-4b-q5", "current")
-        try:
-            probe = voice_probe(token)
-        except Exception as error:
-            probe = {"error": type(error).__name__}
-        print(json.dumps({"voice_probe": probe}, ensure_ascii=False))
-        state = inspect(cmd, container)["State"]
-        summary = {"candidate_sha": MODEL_SHA, "image_id": image_id, "image_digest": digests[0],
-                   "baseline": baseline, "candidate": candidate, "voice_probe": probe,
-                   "oom_killed": state.get("OOMKilled", False),
-                   "resources": {"available_gib_before_trial": round(available / GIB, 2),
-                                 "candidate_limit_gib": 5, "candidate_cpus": 2}, "preset": "current"}
-        report = TARGET / f"model-trial-{time.time_ns()}.json"
-        private_json(report, summary)
-        print(json.dumps({"baseline_exact": score(baseline), "candidate_exact": score(candidate), "scored_cases": 10}))
-        print("Informe:", report)
-        print("Modelo de producción conservado. Revisar las respuestas abiertas y los tiempos.")
-        print("Activación tras revisión: python3 deploy/dell-ai/admin/trial-model.py --activate", report, "--apply")
+    profiles = [2]
+    if args.tune:
+        cores = physical_cores()
+        profiles = [n for n in (2, 4, 6) if n <= max(2, cores - 2)]
+        print(json.dumps({"physical_cores": cores, "trial_cpu_profiles": profiles,
+                          "note": "Ensayos consecutivos; dos núcleos de margen cuando hay suficientes"}))
+    for threads in profiles:
+        require_memory(memory_available())
+        with candidate_container(cmd, image_id, token, threads) as container:
+            print(f"Calentando candidato 4B con {threads} CPU…", flush=True)
+            quality.completion(TRIAL_PORT, token, "Di solamente: listo.", quality.PRESETS["current"])
+            print("Evaluando candidato 4B…", flush=True)
+            candidate = suite(TRIAL_PORT, token, "qwen3-4b-q5", "current")
+            try:
+                probes = [voice_probe(token) for _ in range(3)]
+                probe = dict(probes[0])
+                probe["samples"] = probes
+                # Worst of three samples: a fast lucky sample must not pass activation.
+                for metric in ("first_audio_ready_seconds", "model_total_seconds", "piper_rtf"):
+                    probe[metric] = max(row.get(metric, 999) for row in probes)
+            except Exception as error:
+                probe = {"error": type(error).__name__}
+            print(json.dumps({"voice_probe": probe}, ensure_ascii=False))
+            state = inspect(cmd, container)["State"]
+            summary = {"candidate_sha": MODEL_SHA, "image_id": image_id, "image_digest": digests[0],
+                       "baseline": baseline, "candidate": candidate, "voice_probe": probe,
+                       "oom_killed": state.get("OOMKilled", False),
+                       "resources": {"available_gib_before_trial": round(available / GIB, 2),
+                                     "candidate_limit_gib": 5, "candidate_cpus": threads}, "preset": "current"}
+            report = TARGET / f"model-trial-{time.time_ns()}.json"
+            private_json(report, summary)
+            print(json.dumps({"baseline_exact": score(baseline), "candidate_exact": score(candidate), "scored_cases": 10}))
+            print("Informe:", report)
+            print("Modelo de producción conservado. Revisar las respuestas abiertas y los tiempos.")
+            print("Activación tras revisión: python3 deploy/dell-ai/admin/trial-model.py --activate", report, "--apply")
+
 
 
 if __name__ == "__main__":
@@ -342,5 +379,6 @@ if __name__ == "__main__":
         if isinstance(error, (ValueError, TimeoutError)):
             print("No completado:", str(error))
         else:
-            print("No completado:", type(error).__name__, "(sin imprimir datos privados)")
+            print("No completado:", type(error).__name__,
+                  f"errno={error.errno}: {os.strerror(error.errno)}" if isinstance(error, OSError) and error.errno else "(sin imprimir datos privados)")
         raise SystemExit(1)
