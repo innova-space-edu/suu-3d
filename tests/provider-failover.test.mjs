@@ -51,9 +51,31 @@ test('Dell private API is primary and sends Cloudflare credentials only server-s
  assert.equal(calls[0].headers.Authorization,'Bearer test-dell-key');
  assert.equal(calls[0].headers['CF-Access-Client-Id'],'example-access-id');
  assert.equal(calls[0].body.model,'suu-local');
- assert.equal(calls[0].body.max_tokens,180);
+ assert.equal(calls[0].body.max_tokens,96);
+  assert.match(calls[0].body.messages[0].content,/máximo 45 palabras/);
  assert.equal(providerStatus().find(p=>p.id==='dell').configured,true);
 }));
+test('Dell CPU response stays capped while external fallback keeps full budget',()=>isolated(async()=>{
+ Object.assign(process.env,{
+   SUU_DELL_API_BASE_URL:'https://private-ai.example/v1',
+   SUU_DELL_API_TOKEN:'dell-test',
+   GROQ_API_KEY:'groq-test'
+ });
+ const calls=[];
+ globalThis.fetch=async(url,options)=>{
+   calls.push({url,body:JSON.parse(options.body)});
+   return calls.length === 1
+     ? new Response('{}',{status:502})
+     : Response.json({choices:[{message:{content:'Respuesta de respaldo correcta'}}]});
+ };
+ const result=await chatWithFallback([{role:'user',content:'hola'}],'Eres SUU');
+ assert.equal(result.provider,'Groq');
+ assert.equal(calls[0].body.max_tokens,96);
+ assert.match(calls[0].body.messages[0].content,/1-3 frases/);
+ assert.equal(calls[1].body.max_tokens,900);
+ assert.equal(calls[1].body.messages[0].content,'Eres SUU');
+}));
+
 test('Dell 502 immediately falls back to Groq without exposing credentials',()=>isolated(async()=>{
  Object.assign(process.env,{
   SUU_DELL_API_BASE_URL:'https://private-ai.example/v1',
