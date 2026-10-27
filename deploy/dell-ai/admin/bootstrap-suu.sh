@@ -35,21 +35,56 @@ fi
 "${docker_cmd[@]}" compose version >/dev/null
 "${docker_cmd[@]}" network inspect portal_default >/dev/null
 [[ -f "$source_dir/compose.yaml" ]] || { echo "Falta compose.yaml"; exit 1; }
-[[ ! -e "$target/compose.yaml" || "$(sha256sum "$target/compose.yaml" | cut -d' ' -f1)" == "$(sha256sum "$source_dir/compose.yaml" | cut -d' ' -f1)" ]] || {
-  echo "Ya existe un Compose diferente en destino; no se sobrescribirá"; exit 1;
-}
+# Admit only a known previous version of this Compose. Never overwrite
+# unrelated deployments or customized Compose files automatically.
+needs_migration=false
+if [[ -e "$target/compose.yaml" ]]; then
+  [[ -f "$target/compose.yaml" && ! -L "$target/compose.yaml" ]] || {
+    echo "Compose de destino no es un archivo normal"; exit 1;
+  }
+  if ! cmp -s "$target/compose.yaml" "$source_dir/compose.yaml"; then
+    old_commit="121a1ef039953123b19c42585325ba54d2342c3b"
+    if git -C "$source_dir" show "$old_commit:deploy/dell-ai/compose.yaml" 2>/dev/null | cmp -s "$target/compose.yaml" -; then
+      needs_migration=true
+      echo "Migración segura detectada: Compose anterior de SUU (clave inaccesible)"
+    else
+      echo "Compose existente desconocido o modificado: NO se sobrescribe"; exit 1;
+    fi
+  fi
+fi
 echo "Origen: $source_dir"
 echo "Destino: $target"
 echo "Red externa: portal_default"
 echo "Imagen definida en Compose: ghcr.io/ggml-org/llama.cpp:server"
 echo "Servicio unico: suu-llm, puerto host 127.0.0.1:8094, CPU 2, RAM 3 GiB"
 echo "No toca: PostgreSQL, MCP, intranet, cloudflared, Tailscale, backups"
+echo "UID/GID del servicio: $(id -u):$(id -g) (dueño de modelos y secreto)"
+echo "Conserva el GGUF y la clave ya instalados"
 if [[ "$mode" == "--dry-run" ]]; then
   echo "PREVISUALIZACIÓN; no se descargó ni modificó nada"
   exit 0
 fi
 
 install -d -m 0700 "$target" "$target/models" "$target/secrets"
+# On first boot and after migration, Compose receives only numeric UID/GID,
+# never any API key. The file is excluded from the Git repo at destination.
+envfile="$target/.env"
+if [[ -e "$envfile" ]]; then
+  [[ -f "$envfile" && ! -L "$envfile" ]] || { echo ".env no válido"; exit 1; }
+  grep -Fxq "SUU_RUN_UID=$(id -u)" "$envfile" &&
+  grep -Fxq "SUU_RUN_GID=$(id -g)" "$envfile" || {
+    echo "UID/GID actuales no coinciden con .env; revisión manual requerida"; exit 1;
+  }
+else
+  printf 'SUU_RUN_UID=%s\nSUU_RUN_GID=%s\n' "$(id -u)" "$(id -g)" >"$envfile"
+fi
+chmod 0600 "$envfile"
+if [[ "$needs_migration" == true ]]; then
+  suffix="$(date -u +%Y%m%dT%H%M%SZ)"
+  [[ ! -e "$target/compose.yaml.bak.$suffix" ]] || { echo "Respaldo ya existe"; exit 1; }
+  cp -p "$target/compose.yaml" "$target/compose.yaml.bak.$suffix"
+  echo "Compose anterior respaldado en $target/compose.yaml.bak.$suffix"
+fi
 cp "$source_dir/compose.yaml" "$target/compose.yaml"
 chmod 0600 "$target/compose.yaml"
 key="$target/secrets/suu_api_key.txt"
@@ -58,6 +93,7 @@ if [[ ! -s "$key" ]]; then
   openssl rand -hex 32 >"$key"
 fi
 chmod 0600 "$key"
+[[ "$(stat -c %u "$key")" == "$(id -u)" ]] || { echo "La clave no pertenece al usuario actual"; exit 1; }
 model="$target/models/Qwen3.5-0.8B-Q4_K_M.gguf"
 if [[ ! -s "$model" ]]; then
   [[ ! -e "$model" ]] || { echo "Modelo vacío; abortado"; exit 1; }
@@ -71,6 +107,7 @@ if [[ ! -s "$model" ]]; then
   mv -- "$model.partial" "$model"
 fi
 chmod 0600 "$model"
+[[ "$(stat -c %u "$model")" == "$(id -u)" ]] || { echo "El GGUF no pertenece al usuario actual"; exit 1; }
 # SHA256 publicado en la ficha del archivo GGUF Q4_K_M.
 expected_sha="fb044e93939a70469c905781334f5de1e6c8b608ced6cbc8c9249bd4127d9526"
 actual_sha="$(sha256sum "$model" | awk '{print $1}')"
