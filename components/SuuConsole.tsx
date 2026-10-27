@@ -57,7 +57,7 @@ export default function SuuConsole(){
   // after any failure it falls back to an installed voice or EDUAI.
   if(config.ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
    const ctl=new AbortController();piperAbort.current=ctl;
-   const timer=window.setTimeout(()=>ctl.abort(),22000);
+   const timer=window.setTimeout(()=>ctl.abort(),47000);
    try{
     const blob=await requestPiperAudio(text,ctl.signal);
     if(ticket!==voiceGeneration.current)return;
@@ -69,9 +69,9 @@ export default function SuuConsole(){
     void meter.start(player);
     await player.play();
     return;
-   }catch{
+   }catch(err){
     if(ticket!==voiceGeneration.current)return;
-    setNotice("Piper Dell no disponible; se utilizará una voz de respaldo.");
+    setNotice((err instanceof Error?err.message:"Piper Dell no disponible")+"; se usará voz de respaldo.");
    }finally{
     clearTimeout(timer);
     if(piperAbort.current===ctl)piperAbort.current=null;
