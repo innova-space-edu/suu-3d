@@ -18,6 +18,36 @@ def scored(correct):
 
 
 class TrialTests(unittest.TestCase):
+    def test_two_b_profile_pins_weights_and_uses_distinct_local_file(self):
+        try:
+            trial.select_profile("qwen-2b")
+            self.assertEqual(trial.MODEL, "Qwen3.5-2B-Q5_K_M.gguf")
+            self.assertEqual(trial.MODEL_BYTES, 1568476256)
+            self.assertEqual(trial.MODEL_SHA, "3f50d5f830873c22d33558f69eb2c34aa59858f37e7a58a982aae88bb38ebe88")
+            self.assertIn("/resolve/7d26695454df6de5fbcce2e58681e62dae06ce43/", trial.URL)
+            self.assertTrue(trial.URL.endswith("Qwen_Qwen3.5-2B-Q5_K_M.gguf"))
+            text = trial.new_profile("CUSTOM=keep\n", "ghcr.io/ggml-org/llama.cpp@sha256:" + "a" * 64)
+            self.assertIn("SUU_MODEL_FILE=Qwen3.5-2B-Q5_K_M.gguf\n", text)
+            with self.assertRaises(ValueError):
+                trial.select_profile("arbitrary-repository")
+        finally:
+            trial.select_profile("qwen-4b")
+
+    def test_four_b_report_cannot_activate_two_b_weights(self):
+        try:
+            with tempfile.TemporaryDirectory() as folder:
+                report = Path(folder) / "report.json"
+                report.write_text(json.dumps({"candidate_sha": trial.PROFILES["qwen-4b"]["sha"],
+                    "preset": "current", "baseline": scored(3), "candidate": scored(10),
+                    "voice_probe": {"first_audio_ready_seconds": 4, "model_total_seconds": 20, "piper_rtf": .3}}))
+                trial.select_profile("qwen-2b")
+                with patch.object(trial, "docker") as docker:
+                    with self.assertRaises(ValueError):
+                        trial.activate([], report, "secret")
+                    docker.assert_not_called()
+        finally:
+            trial.select_profile("qwen-4b")
+
     def test_resource_gate_preserves_host_headroom(self):
         with self.assertRaises(ValueError):
             trial.require_memory(6 * trial.GIB)
