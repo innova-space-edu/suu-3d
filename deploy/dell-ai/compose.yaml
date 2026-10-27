@@ -1,5 +1,6 @@
 services:
   suu-llm:
+    container_name: suu-llm
     image: ghcr.io/ggml-org/llama.cpp:server
     restart: unless-stopped
     init: true
