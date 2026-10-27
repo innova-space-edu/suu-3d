@@ -113,6 +113,54 @@ en este equipo). No ejecutar `--apply` si `projects`/`docker` no concuerdan
 con el esquema esperado, o si hay errores de autenticación persistentes en
 el conector. La lista Docker por sí sola **no autoriza instalaciones nuevas**.
 
+### Situación constatada tras registrar SUU (26-10-2026)
+
+El usuario confirmó `suu-llm Up (healthy)`, `/v1/models` devuelve
+`suu-local`, pero la primera prueba de texto quedó sin `content`.
+Este despliegue desactiva explícitamente el razonamiento interno de
+llama.cpp con `--reasoning off` y aumenta el presupuesto de prueba
+de 48 a 192 tokens. La prueba registra `finish_reason`, duración,
+tokens generados y longitud del campo de razonamiento, sin imprimirlo.
+
+```bash
+cd ~/suu-3d && git pull --ff-only
+cd deploy/dell-ai
+bash admin/bootstrap-suu.sh --dry-run
+bash admin/bootstrap-suu.sh --apply
+sudo docker ps --filter name=suu-llm
+python3 admin/verify-suu.py
+```
+
+Si la respuesta sigue vacía, conservar los datos de finalización y
+los últimos registros de `suu-llm`; no aumentar ciegamente el
+timeout de SUU/Vercel ni pasar su clave a ChatGPT.
+
+El usuario confirmó además: agente `active`, socket Unix del anfitrión
+existente, túnel `active` y MCP `/healthz` HTTP 200, pero el comando
+`test -S /run/innova-admin/admin.sock` dentro del contenedor
+`intranet-mcp` devuelve NO DISPONIBLE. Esto distingue salud HTTP
+de acceso real a la administración.
+
+Antes de cambiar montajes o reiniciar el MCP, inspeccionar **solo lectura**:
+
+```bash
+sudo docker inspect intranet-mcp --format '{{range .Mounts}}{{println .Type .Source "->" .Destination}}{{end}}'
+sudo docker exec intranet-mcp sh -c 'id; ls -ld /run/innova-admin /run/innova-admin/admin.sock 2>&1 || :'
+sudo ls -ld /run/innova-admin /run/innova-admin/admin.sock
+sudo docker inspect intranet-mcp --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}'
+```
+
+Si monta directamente el **archivo socket**, un reinicio del agente
+puede reemplazar el inode; es preferible montar el **directorio**
+`/run/innova-admin` dentro del contenedor con permisos mínimos,
+siempre tras revisar la configuración Compose efectiva del MCP.
+Si no existe ningún montaje, habrá que restaurarlo desde el Compose
+que usa ese contenedor. No editar ni recrear componentes de intranet
+sin conocer antes la configuración real y su respaldo.
+
+No exponer Docker socket al MCP, no dar `privileged`, no cambiar permisos
+del socket a `777`, ni desactivar aprobaciones del propietario.
+
 ### Si el MCP administrativo continúa inaccesible
 
 El agente puede estar `active` mientras su socket o el túnel MCP no respondan.
