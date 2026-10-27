@@ -5,7 +5,7 @@ import {useFairCamera} from "@/hooks/useFairCamera";
 import {calibrateFair,FAIR_SCRIPTS,FairFlow,sampleBox,validCalibration,type FairCalibration,type FairAnnouncement,type MotionSample} from "@/lib/fair-flow";
 import type {ChatMessage} from "@/lib/providers";
 
-type Props={sttAvailable?:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];voiceId:string;language:string;quality:"eco"|"high";solid:boolean;noiseReduction:boolean};
+type Props={ttsLocal?:boolean;sttAvailable?:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];voiceId:string;language:string;quality:"eco"|"high";solid:boolean;noiseReduction:boolean};
 const STORAGE="suu-fair-calibration-v1";
 export default function SuuFairMode(props:Props){
  const [variant,setVariant]=useState<"welcome"|"guide"|null>(null);
