@@ -10,6 +10,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -30,6 +31,14 @@ PROFILES = {
         "revision": "ae44f08e1392f39c0e474af10c3ff8355c8b6688",
         "sha": "66713ce35a58a82fe87642d4ec13425bf9b9a46800fff5c49a665ef5701439dc",
         "bytes": 2889513696,
+    },
+    "qwen-4b-q4": {
+        "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        "repository": "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+        "remote_file": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        "revision": "ae44f08e1392f39c0e474af10c3ff8355c8b6688",
+        "sha": "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e",
+        "bytes": 2497280736,
     },
     "qwen-2b": {
         "file": "Qwen3.5-2B-Q5_K_M.gguf",
@@ -242,16 +251,33 @@ def restore(cmd, backup, token):
     wait_ready(cmd, "suu-llm", 8094, token)
 
 
-def activate(cmd, report_path, token):
-    report = json.loads(regular(report_path).read_text())
+def validate_report(report):
     candidate_score = score(report.get("candidate", []))
     if (report.get("candidate_sha") != MODEL_SHA or report.get("preset") != "current" or candidate_score < 9
             or candidate_score <= score(report.get("baseline", [])) or report.get("oom_killed")):
         raise ValueError("El candidato necesita al menos 9/10 coincidencias y superar al actual; revisar el informe antes de activar")
     probe = report.get("voice_probe", {})
-    if ("error" in probe or "skipped" in probe or probe.get("model_total_seconds", 999) > 45
+    metrics = [probe.get(key) for key in ("model_total_seconds", "piper_rtf", "first_audio_ready_seconds")]
+    if (not all(isinstance(value, (int, float)) and math.isfinite(value) and value >= 0 for value in metrics)
+            or "error" in probe or "skipped" in probe or probe.get("model_total_seconds", 999) > 45
             or probe.get("piper_rtf", 999) >= 1 or probe.get("first_audio_ready_seconds", 999) > 8):
         raise ValueError("La voz debe estar lista en ≤8 s y el texto completo en ≤45 s, con RTF <1")
+
+
+def print_activation_status(report, path):
+    try:
+        validate_report(report)
+    except ValueError as error:
+        print("Candidato NO apto para activar:", str(error))
+        return False
+    print("Filtros básicos cumplidos. Revisar respuestas abiertas y tiempos antes de activar.")
+    print("Activación tras revisión: python3 deploy/dell-ai/admin/trial-model.py --activate", path, "--apply")
+    return True
+
+
+def activate(cmd, report_path, token):
+    report = json.loads(regular(report_path).read_text())
+    validate_report(report)
     require_memory(memory_available())
     model = regular(TARGET / "models" / MODEL)
     if digest(model) != MODEL_SHA:
@@ -402,7 +428,7 @@ def main():
             print(json.dumps({"model_profile": PROFILE, "cpu_threads": threads, "first_audio_worst_seconds": probe.get("first_audio_ready_seconds"), "baseline_exact": score(baseline), "candidate_exact": score(candidate), "scored_cases": 10}))
             print("Informe:", report)
             print("Modelo de producción conservado. Revisar las respuestas abiertas y los tiempos.")
-            print("Activación tras revisión: python3 deploy/dell-ai/admin/trial-model.py --activate", report, "--apply")
+            print_activation_status(summary, report)
 
 
 

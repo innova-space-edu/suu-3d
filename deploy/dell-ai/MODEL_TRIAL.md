@@ -136,3 +136,25 @@ verifica su SHA; un informe 4B no autoriza pesos 2B ni viceversa. Informes
 antiguos sin perfil se interpretan como 4B. Por defecto, sin `--model`, sigue
 probando el 4B anterior. No activa ni selecciona un modelo automáticamente;
 permanece la revisión de respuestas abiertas, calidad y demora local.
+
+## Último ensayo local: mismo 4B en Q4_K_M
+
+```bash
+python3 deploy/dell-ai/admin/trial-model.py --model qwen-4b-q4 --apply
+```
+
+Usa Qwen3-4B-Instruct-2507 de la misma revisión del cuantizador que Q5,
+`ae44f08e1392f39c0e474af10c3ff8355c8b6688`. Solo cambia la cuantización:
+archivo remoto `Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf`, tamaño exacto
+2.497.280.736 bytes, SHA-256
+`2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e`.
+Los archivos Q5 y los modelos anteriores se conservan. No se garantiza
+velocidad ni calidad; se miden con los mismos límites y preguntas,
+calentamiento y tres muestras de voz. No cambia la fragmentación ni el prompt
+de producción durante esta comparación.
+
+Al terminar, el script comparte la validación de calidad/latencia con la
+activación real. Si falla, imprime el motivo y NO muestra un comando de
+activación. Si pasa, muestra el comando para revisión; todavía verifica
+pesos, imagen, recursos y configuración antes de cualquier cambio real.
+También rechaza métricas ausentes o no finitas.
