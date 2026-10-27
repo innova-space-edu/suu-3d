@@ -1,3 +1,5 @@
+from contextlib import redirect_stdout
+import io
 import hashlib
 import importlib.util
 import json
@@ -18,6 +20,36 @@ def scored(correct):
 
 
 class TrialTests(unittest.TestCase):
+    def test_q4_profile_is_same_four_b_revision_with_distinct_hash(self):
+        try:
+            trial.select_profile("qwen-4b-q4")
+            self.assertEqual(trial.MODEL_BYTES, 2497280736)
+            self.assertEqual(trial.MODEL_SHA, "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e")
+            self.assertEqual(trial.REVISION, trial.PROFILES["qwen-4b"]["revision"])
+            self.assertTrue(trial.URL.endswith("Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"))
+            with tempfile.TemporaryDirectory() as folder:
+                report = Path(folder) / "report.json"
+                report.write_text(json.dumps({"candidate_sha": trial.PROFILES["qwen-4b"]["sha"],
+                    "preset": "current", "baseline": scored(3), "candidate": scored(10)}))
+                with patch.object(trial, "docker") as docker:
+                    with self.assertRaises(ValueError):
+                        trial.activate([], report, "secret")
+                    docker.assert_not_called()
+        finally:
+            trial.select_profile("qwen-4b")
+
+    def test_activation_command_is_printed_only_for_eligible_reports(self):
+        report = {"candidate_sha": trial.MODEL_SHA, "preset": "current", "baseline": scored(3),
+                  "candidate": scored(9), "voice_probe": {"model_total_seconds": 20,
+                  "first_audio_ready_seconds": 5, "piper_rtf": .5}}
+        for score_value, latency, eligible in ((6, 5, False), (9, 14, False), (9, float("nan"), False), (9, 5, True)):
+            report["candidate"] = scored(score_value)
+            report["voice_probe"]["first_audio_ready_seconds"] = latency
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(trial.print_activation_status(report, Path("synthetic-report.json")), eligible)
+            self.assertEqual("--activate" in output.getvalue(), eligible)
+
     def test_two_b_profile_pins_weights_and_uses_distinct_local_file(self):
         try:
             trial.select_profile("qwen-2b")
