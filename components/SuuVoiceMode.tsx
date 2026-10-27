@@ -5,6 +5,7 @@ import {spokenText,fairSpokenText,fairAudienceText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import {selectBrowserVoice} from "@/lib/browser-voice";
+import {preferOnDeviceRecognition} from "@/lib/local-recognition";
 import {fairResponse} from "@/lib/fair-response";
 import dynamic from "next/dynamic";
 import {Mic,MicOff,Volume2,VolumeX,X,AudioLines} from "lucide-react";
@@ -15,7 +16,7 @@ const fairAudioCache=new Map<string,Awaited<ReturnType<typeof readVoiceResponse>
 let fairAudioBytes=0;
 const Avatar=dynamic(()=>import("./SuuAvatar"),{ssr:false});
 type SpeechResult={results:Record<number,Record<number,{transcript:string}>>};
-type Recognition={lang:string;continuous:boolean;interimResults:boolean;onresult:((event:SpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;onspeechstart:(()=>void)|null;onspeechend:(()=>void)|null;start(track?:MediaStreamTrack):void;stop():void};
+type Recognition={processLocally?:boolean;lang:string;continuous:boolean;interimResults:boolean;onresult:((event:SpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;onspeechstart:(()=>void)|null;onspeechend:(()=>void)|null;start(track?:MediaStreamTrack):void;stop():void};
 type RecognitionConstructor=new()=>Recognition;
 export type FairVoiceCommand={id:number;text:string};
 type Props={modeLabel?:string;fairMode?:boolean;enabled?:boolean;announcement?:FairVoiceCommand|null;onAnnouncementEnd?:(success:boolean)=>void;onAvailable?:(available:boolean)=>void;noiseReduction:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];domain:Domain;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive:boolean};
@@ -41,17 +42,25 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
  const finishSpeech=(success=true)=>{releaseAudio();if(announcing.current){announcing.current=false;endRef.current?.(success)}setPhaseNow("idle");restart()};
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
  const speak=async(text:string)=>{
-  const displayText=fairMode?fairAudienceText(text):text;const speechLocale=(voiceId.startsWith("browser:")?window.speechSynthesis?.getVoices().find(v=>"browser:"+v.voiceURI===voiceId)?.lang:voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0])||language;text=(fairMode?fairSpokenText:spokenText)(text,speechLocale);
+  const displayText=fairMode?fairAudienceText(text):text;
+  const speechLocale=(voiceId.startsWith("browser:")?window.speechSynthesis?.getVoices().find(v=>"browser:"+v.voiceURI===voiceId)?.lang:voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0])||language;
+  text=(fairMode?fairSpokenText:spokenText)(text,speechLocale);
   if(stopSignal.current)return;
   if(!text){finishSpeech();return}
   if(muted){finishSpeech(false);return}
-  releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(displayText);let started=false;
-  if(!voiceId.startsWith("browser:")){
+  releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(displayText);
+  const options=window.speechSynthesis?.getVoices()||[];
+  const installed=selectBrowserVoice(options,voiceId,speechLocale);
+  // browser:preferred is local first with an explicit remote fallback only
+  // when there is no installed voice. browser:auto is strictly device-only.
+  const requestRemote=!voiceId.startsWith("browser:")||(voiceId==="browser:preferred"&&!installed);
+  if(requestRemote){
    try{
-    const cacheKey=JSON.stringify([voiceId,speechLocale,text.slice(0,1900)]);
+    const remoteId=voiceId==="browser:preferred"?"es-MX-DaliaNeural":voiceId;
+    const cacheKey=JSON.stringify([remoteId,speechLocale,text.slice(0,1900)]);
     let recording=fairMode?fairAudioCache.get(cacheKey):undefined;
     if(!recording){
-     const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId,language:speechLocale,mode:fairMode?"fair":undefined,timings:true}),signal:abort.current?.signal});
+     const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId:remoteId,language:speechLocale,mode:fairMode?"fair":undefined,timings:true}),signal:abort.current?.signal});
      if(!res.ok)throw new Error("No hay motor de voz en línea");
      recording=await readVoiceResponse(res);
      if(fairMode&&recording.blob.size<=8000000){
@@ -63,19 +72,22 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
     }
     const {blob,words}=recording;
     if(stopSignal.current||ticket!==speechGeneration.current)return;
-    audioUrl.current=URL.createObjectURL(blob);const player=new Audio(audioUrl.current);audio.current=player;lips.audio(player,text.slice(0,1900),words);
-    player.onended=()=>finishSpeech();
-    player.onerror=()=>finishSpeech(false);
-    void meter.start(player);
-    started=true;await player.play();
-   }catch{if(ticket!==speechGeneration.current)return;releaseAudio();started=false}
+    audioUrl.current=URL.createObjectURL(blob);const player=new Audio(audioUrl.current);audio.current=player;
+    lips.audio(player,text.slice(0,1900),words);
+    player.onended=()=>finishSpeech();player.onerror=()=>finishSpeech(false);
+    void meter.start(player);await player.play();return;
+   }catch{if(ticket!==speechGeneration.current)return;releaseAudio()}
   }
-  if(started||stopSignal.current)return;
-  if(!("speechSynthesis" in window)){setPhaseNow("error");setSubtitle("No se encontró ningún sintetizador de voz.");if(announcing.current){announcing.current=false;endRef.current?.(false)}return}
+  if(stopSignal.current)return;
+  const localVoice=selectBrowserVoice(window.speechSynthesis?.getVoices()||[],voiceId,speechLocale);
+  if(!localVoice){
+   setPhaseNow("error");
+   setSubtitle("No hay voz instalada para este idioma. Instala una voz en el dispositivo o selecciona una voz EDUAI en Configuración.");
+   if(announcing.current){announcing.current=false;endRef.current?.(false)}
+   return;
+  }
   const browserTicket=speechGeneration.current;
-  const words=new SpeechSynthesisUtterance(spokenText(text.slice(0,2400),speechLocale));
-  words.lang=speechLocale;words.rate=1;const options=window.speechSynthesis.getVoices();
-  words.voice=selectBrowserVoice(options,voiceId,speechLocale);
+  const words=new SpeechSynthesisUtterance(text.slice(0,2400));words.lang=speechLocale;words.rate=1;words.voice=localVoice;
   words.onstart=()=>{if(browserTicket!==speechGeneration.current||stopSignal.current)return;let t=0;timer.current=setInterval(()=>{t+=.85;setEnergy(.15+.32*Math.abs(Math.sin(t)))},90)};
   words.onend=()=>{if(browserTicket===speechGeneration.current&&!stopSignal.current)finishSpeech()};
   words.onerror=()=>{if(browserTicket===speechGeneration.current&&!stopSignal.current)finishSpeech(false)};
@@ -107,6 +119,7 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
   const Constructor=web.SpeechRecognition||web.webkitSpeechRecognition;
   if(!Constructor){setPhaseNow("error");setSubtitle("Para conversación continua usa Chrome o Edge con permiso de micrófono.");return}
   const r=new Constructor();recognizer.current=r;r.lang=language;r.continuous=false;r.interimResults=false;
+  await preferOnDeviceRecognition(Constructor,r,language);
   const recognitionTicket=++recognitionGeneration.current;
   let transcript="",failed=false;
   r.onspeechstart=()=>{if(recognitionTicket!==recognitionGeneration.current)return;humanSpeaking.current=true;reportAvailable()};
@@ -134,7 +147,7 @@ export default function SuuVoiceMode({modeLabel,fairMode=false,enabled,announcem
   <div className="voiceBottom"><div className={"voiceStatus "+phase}><AudioLines size={19}/><span>{phase==="listening"?"ESCUCHANDO":phase==="thinking"?"PENSANDO":phase==="speaking"?"HABLANDO":phase==="error"?"REINTENTAR":"EN ESPERA"}</span></div>
    <p ref={caption} aria-live="polite" tabIndex={0} aria-label="Respuesta de SUU">{subtitle}</p>
    <div className="voiceControls"><button className="voiceRound" disabled={fairMode&&enabled===false} onClick={toggle} title={phase==="idle"||phase==="error"?"Iniciar voz":"Pausar voz"}>{phase==="idle"||phase==="error"?<Mic size={27}/>:<MicOff size={27}/>}</button><button className="voiceSmall" onClick={()=>setMuted(v=>!v)} title={muted?"Activar audio":"Silenciar audio"}>{muted?<VolumeX size={20}/>:<Volume2 size={20}/>}</button><button className="voiceSmall" onClick={()=>{stop();onClose()}}>Salir</button></div>
-   <small>{phase==="listening"&&(microphone.mode==="standard"?"Reducción estándar activa. ":"Entrada gestionada por el navegador. ")}La escucha se reanuda automáticamente cuando SUU termina de responder. El micrófono se detiene al cerrar o pausar.</small>
+   <small>{phase==="listening"&&(microphone.mode==="standard"?"Reducción estándar activa. ":"Entrada gestionada por el navegador. ")}Voz instalada del dispositivo prioritaria. El reconocimiento se ejecuta localmente si hay un paquete compatible; si no, el navegador puede utilizar un servicio externo. La escucha se reanuda al terminar y el micrófono se detiene al cerrar o pausar.</small>
   </div>
  </div>;
 }
