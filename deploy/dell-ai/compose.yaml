@@ -36,6 +36,10 @@ services:
       - "1"
       - "--n-predict"
       - "256"
+      # This small CPU model is used for speech: require visible final text.
+      # llama.cpp auto-reasoning can otherwise spend the response budget on thought.
+      - "--reasoning"
+      - "off"
       - "--no-webui"
       - "--api-key-file"
       - "/run/secrets/suu_api_key"
