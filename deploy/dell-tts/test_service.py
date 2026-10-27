@@ -27,6 +27,8 @@ def load_service():
         with patch.dict(os.environ, {"PIPER_API_TOKEN_FILE": str(root / "token"),
                                      "PIPER_MODEL": str(root / "voice.onnx"), "PIPER_THREADS": "1"}), \
              patch.dict(sys.modules, {"onnxruntime": ort, "piper": MagicMock(), "piper.config": MagicMock()}):
+            sys.modules["piper.config"].PiperConfig.from_dict.return_value.num_speakers = 2
+            sys.modules["piper"].PiperVoice.return_value.config.num_speakers = 2
             spec.loader.exec_module(module)
         return module, ort
 
@@ -70,6 +72,17 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("private", error.exception.detail)
         self.assertTrue(self.service.LOCK.acquire(blocking=False))
         self.service.LOCK.release()
+
+    def test_synthesis_passes_the_configured_speaker(self):
+        audio = wav_bytes()
+        def write(_text, wav, syn_config):
+            self.assertIs(syn_config, self.service.SYNTHESIS)
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(16000)
+            wav.writeframes(audio[44:])
+        self.service.VOICE.synthesize_wav.side_effect = write
+        self.assertTrue(self.service.synthesize_wav("Hola.").startswith(b"RIFF"))
 
     async def test_cancelled_request_keeps_native_worker_exclusive(self):
         entered, release = threading.Event(), threading.Event()

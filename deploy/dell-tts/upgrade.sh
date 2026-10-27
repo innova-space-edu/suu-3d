@@ -13,8 +13,8 @@ files=(compose.yaml Dockerfile requirements.txt service.py benchmark.py)
 for file in "${files[@]}"; do
  [[ -f "$src/$file" && ! -L "$src/$file" && ! -L "$target/$file" ]] || exit 1
 done
-echo "Actualización: ONNX 1 hilo sin espera activa, precalentamiento y métricas."
-echo "Conserva Daniela, límite 1 CPU/1 GiB, credenciales y modelos existentes."
+echo "Actualización: ONNX sin espera activa, precalentamiento y métricas."
+echo "Conserva el perfil de voz/CPU de .env (por defecto Daniela, 1 CPU), claves y modelos."
 if [[ "$mode" == --dry-run ]]; then echo "Sin cambios. Usar --apply para instalar."; exit 0; fi
 if docker info >/dev/null 2>&1; then cmd=(docker); else sudo -v; cmd=(sudo docker); fi
 backup="$target/backups/$(date -u +%Y%m%dT%H%M%S)-$$"
@@ -26,6 +26,6 @@ done
 cd "$target"
 "${cmd[@]}" compose config --quiet
 "${cmd[@]}" compose build suu-tts
-"${cmd[@]}" compose up -d --no-deps suu-tts
+"${cmd[@]}" compose up -d --no-deps --wait --wait-timeout 180 suu-tts
 echo "Respaldo de configuración: $backup"
 echo "Esperar health=healthy y medir: sudo docker exec suu-tts python /app/benchmark.py"

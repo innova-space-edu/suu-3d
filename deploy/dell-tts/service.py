@@ -16,7 +16,7 @@ from pathlib import Path
 import onnxruntime as ort
 from fastapi import FastAPI, HTTPException, Request, Response
 from piper import PiperVoice
-from piper.config import PiperConfig
+from piper.config import PiperConfig, SynthesisConfig
 
 TOKEN_FILE = Path(os.environ.get("PIPER_API_TOKEN_FILE", "/run/secrets/tts_api_key"))
 TOKEN = TOKEN_FILE.read_text(encoding="utf-8").strip()
@@ -44,6 +44,10 @@ VOICE = PiperVoice(
                                 providers=["CPUExecutionProvider"]),
 )
 VOICE_NAME = MODEL_PATH.stem
+SPEAKER_ID = int(os.environ.get("PIPER_SPEAKER_ID", "0"))
+if not 0 <= SPEAKER_ID < VOICE.config.num_speakers:
+    raise RuntimeError("Invalid Piper speaker ID")
+SYNTHESIS = SynthesisConfig(speaker_id=SPEAKER_ID)
 LOCK = threading.BoundedSemaphore(1)
 MAX_TEXT = 700
 MAX_AUDIO_BYTES = 3_000_000
@@ -61,13 +65,13 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan
 @app.get("/health")
 def health():
     return {"status": "ok", "engine": "piper", "voice": VOICE_NAME,
-            "device": "cpu", "threads": THREADS, "optimized": True}
+            "device": "cpu", "threads": THREADS, "speaker_id": SPEAKER_ID, "optimized": True}
 
 
 def synthesize_wav(text: str) -> bytes:
     output = io.BytesIO()
     with wave.open(output, "wb") as wav:
-        VOICE.synthesize_wav(text, wav)
+        VOICE.synthesize_wav(text, wav, syn_config=SYNTHESIS)
     result = output.getvalue()
     if not result.startswith(b"RIFF") or len(result) < 100:
         raise ValueError("Invalid synthesized WAV")

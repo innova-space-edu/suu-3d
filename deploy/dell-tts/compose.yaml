@@ -9,7 +9,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    cpus: "1.0"
+    cpus: "${TTS_CPUS:-1.0}"
     mem_limit: 1g
     pids_limit: 96
     tmpfs:
@@ -21,11 +21,12 @@ services:
       - ./secrets/tts_api_key.txt:/run/secrets/tts_api_key:ro
     environment:
       PIPER_API_TOKEN_FILE: /run/secrets/tts_api_key
-      PIPER_MODEL: /voices/es_AR-daniela-high.onnx
+      PIPER_MODEL: /voices/${PIPER_MODEL_NAME:-es_AR-daniela-high}.onnx
+      PIPER_SPEAKER_ID: "${PIPER_SPEAKER_ID:-0}"
       HOME: /tmp
       XDG_CACHE_HOME: /tmp
       OMP_NUM_THREADS: "1"
-      PIPER_THREADS: "1"
+      PIPER_THREADS: "${PIPER_THREADS:-1}"
     networks: [portal_default]
     healthcheck:
       test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8096/health',timeout=2)"]

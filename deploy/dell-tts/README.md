@@ -92,6 +92,47 @@ cd ~/suu-tts && sudo docker compose stop suu-tts
 No ejecutar `docker compose down` sobre la intranet, Qwen o Whisper.
 # Optimización de instalación existente
 
+## Comparar una voz femenina más ligera
+
+```bash
+bash deploy/dell-tts/compare-voices.sh --apply
+```
+
+Cerrar las conversaciones de SUU durante la medición. El proceso tarda varios
+minutos: actualiza el servicio, espera a que esté saludable, descarga Sharvard y
+ejecuta secuencialmente 18 síntesis en contenedores temporales sin red ni puertos.
+Compara Daniela con una CPU y Sharvard con una y dos CPU; cada proceso usa un
+modelo persistente precalentado, seis frases idénticas y una cuota de CPU igual
+al número de hilos. El informe JSONL queda en `~/suu-tts/voice-comparison-*.jsonl`.
+La prueba de dos CPU es temporal y no modifica Qwen ni su configuración.
+
+Sharvard medium (`es_ES-sharvard-medium`) contiene dos hablantes. El JSON oficial
+identifica `M: 0` y **`F: 1`**; el perfil femenino usa explícitamente `speaker_id=1`.
+Fuente/configuración: https://huggingface.co/rhasspy/piper-voices/blob/main/es/es_ES/sharvard/medium/es_ES-sharvard-medium.onnx.json
+Modelo Piper por rhasspy, voz basada en el dataset Sharvard (Universidad de
+Edimburgo), licencia del dataset CC BY 3.0 según su tarjeta:
+https://huggingface.co/rhasspy/piper-voices/blob/main/es/es_ES/sharvard/medium/MODEL_CARD
+
+Solo se activa Sharvard con **una CPU** si su RTF mediano es menor que 1 y mejora
+al menos 15% frente a Daniela en la misma ejecución. Si no, conserva el perfil
+actual. Los resultados de dos CPU quedan para revisión; no se activan solos y
+no demuestran que Qwen mantenga su velocidad mientras conversa.
+La calidad/pronunciación debe comprobarse escuchando SUU después del cambio.
+Daniela permanece instalada. Selección y reversión manual:
+
+```bash
+bash deploy/dell-tts/select-voice.sh sharvard 1
+bash deploy/dell-tts/select-voice.sh daniela 1
+# Solo después de revisar el informe y comprobar Qwen:
+bash deploy/dell-tts/select-voice.sh sharvard 2
+```
+
+La selección modifica solo cuatro variables del perfil en `.env`, respalda el
+archivo y restaura el perfil anterior si el nuevo servicio no llega a saludable.
+El selector web mantiene su ID anterior por compatibilidad, con etiqueta genérica
+«Piper · voz femenina configurada en el Dell». No hace falta cambiar Vercel o el
+túnel para probar el perfil del servidor.
+
 Desde la copia actualizada del repositorio, ejecutar como usuario propietario:
 
 ```bash
