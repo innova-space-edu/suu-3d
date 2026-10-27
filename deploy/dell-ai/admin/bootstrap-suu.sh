@@ -43,10 +43,22 @@ if [[ -e "$target/compose.yaml" ]]; then
     echo "Compose de destino no es un archivo normal"; exit 1;
   }
   if ! cmp -s "$target/compose.yaml" "$source_dir/compose.yaml"; then
-    old_commit="121a1ef039953123b19c42585325ba54d2342c3b"
-    if git -C "$source_dir" show "$old_commit:deploy/dell-ai/compose.yaml" 2>/dev/null | cmp -s "$target/compose.yaml" -; then
+    # Only exact published revisions of SUU's own Compose may be migrated.
+    # Keep this list fixed; reject unknown/locally-customized Compose files.
+    known_previous=(
+      "121a1ef039953123b19c42585325ba54d2342c3b"
+      "c0c051513cb364734f28cb04e67d0e10fdd88ff0"
+    )
+    matched=false
+    for old_commit in "${known_previous[@]}"; do
+      if git -C "$source_dir" show "$old_commit:deploy/dell-ai/compose.yaml" 2>/dev/null | cmp -s "$target/compose.yaml" -; then
+        matched=true
+        break
+      fi
+    done
+    if [[ "$matched" == true ]]; then
       needs_migration=true
-      echo "Migración segura detectada: Compose anterior de SUU (clave inaccesible)"
+      echo "Migración segura detectada: Compose SUU publicado previamente"
     else
       echo "Compose existente desconocido o modificado: NO se sobrescribe"; exit 1;
     fi

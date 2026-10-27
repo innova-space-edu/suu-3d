@@ -5,6 +5,7 @@ Desde el Dell: python3 admin/verify-suu.py
 No modifica Docker, MCP, Cloudflare ni credenciales.
 """
 import json
+import time
 import sys
 import urllib.error
 import urllib.request
@@ -23,6 +24,23 @@ def request(path, token, data=None, timeout=120):
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.load(resp)
 
+def unpack_completion(reply):
+    choices = reply.get("choices") if isinstance(reply, dict) else None
+    if not isinstance(choices, list) or not choices:
+        return "", "missing_choices", 0, 0
+    first = choices[0] if isinstance(choices[0], dict) else {}
+    message = first.get("message") if isinstance(first.get("message"), dict) else {}
+    content = message.get("content")
+    reasoning = message.get("reasoning_content")
+    usage = reply.get("usage") if isinstance(reply.get("usage"), dict) else {}
+    return (
+        content if isinstance(content, str) else "",
+        str(first.get("finish_reason", "unknown")),
+        len(reasoning) if isinstance(reasoning, str) else 0,
+        usage.get("completion_tokens", 0),
+    )
+
+
 def main():
     try:
         token = KEY_FILE.read_text(encoding="utf-8").strip()
@@ -32,20 +50,29 @@ def main():
         identifiers = [x.get("id", "") for x in models.get("data", [])
                        if isinstance(x, dict)]
         print("API local: accesible; modelos:", ", ".join(identifiers) or "(sin nombres)")
+        start = time.monotonic()
         reply = request(
             "/v1/chat/completions",
             token,
             {"model": MODEL,
-             "messages": [{"role": "user", "content": "Di solamente: SUU listo."}],
-             "max_tokens": 48, "temperature": 0},
-            timeout=120)
-        choices = reply.get("choices", [])
-        text = (choices[0].get("message", {}).get("content", "")
-                if choices else "")
-        if not text.strip():
-            print("Respuesta vacía: revisar stdout/logs del servidor")
+             "messages": [
+                 {"role": "system", "content": "Eres SUU. Responde brevemente en español."},
+                 {"role": "user", "content": "Di solamente: SUU listo."}
+             ],
+             "max_tokens": 192, "temperature": 0.7, "stream": False},
+            timeout=150)
+        elapsed = round(time.monotonic() - start, 2)
+        answer, finish_reason, reasoning_chars, generated = unpack_completion(reply)
+        print("Generación:", {"finish_reason": finish_reason,
+                              "tokens_generados": generated,
+                              "caracteres_razonamiento": reasoning_chars,
+                              "duracion_segundos": elapsed})
+        if not answer.strip():
+            print("Contenido visible vacío. No se imprime el razonamiento.")
+            print("Si finish_reason=length, se agotó el presupuesto de tokens.")
+            print("Revisar configuración --reasoning off y registros del contenedor.")
             return 1
-        print("Modelo respondió (primeros 180 caracteres):", text[:180])
+        print("Modelo respondió (primeros 180 caracteres):", answer[:180])
         print("La inferencia local funciona. Esto NO prueba Cloudflare ni Vercel.")
         return 0
     except FileNotFoundError:
