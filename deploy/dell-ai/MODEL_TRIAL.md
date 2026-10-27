@@ -158,3 +158,35 @@ activación real. Si falla, imprime el motivo y NO muestra un comando de
 activación. Si pasa, muestra el comando para revisión; todavía verifica
 pesos, imagen, recursos y configuración antes de cualquier cambio real.
 También rechaza métricas ausentes o no finitas.
+
+## Comparar inicio rápido y continuidad del audio
+
+```bash
+python3 deploy/dell-ai/admin/trial-model.py --model qwen-4b-q4 --speech-trial --apply
+```
+
+Reutiliza el Q4 descargado, conserva las pruebas de calidad y compara
+fragmentación actual 60/150 con alternativa 35/80 caracteres. Cada esquema
+tiene tres muestras; se alterna el orden para reducir el sesgo de caché. No
+se modifica el prompt, muestreo, modelo de producción ni fragmentación web.
+
+A diferencia de la prueba anterior de solo primer fragmento, sintetiza toda
+la respuesta hablada (máximo 700 caracteres), con una sola petición Piper
+a la vez y un fragmento anticipado. Usa la duración de cada WAV y el instante
+en que queda listo para estimar pausas entre clips. Espera los comienzos de
+reproducción simulados para no sintetizar muchos clips por adelantado.
+No reproduce sonido ni incluye Vercel/Cloudflare, decodificación o pausas del
+navegador: la continuidad estimada NO es una medición real del reproductor.
+La prueba usa preguntas sintéticas, no conversaciones privadas.
+
+El resumen `speech_comparison_summary` informa el peor primer WAV, RTF y
+pausas máxima/total de las tres muestras por esquema; el informe conserva
+cada clip medido. Un primer WAV temprano acompañado de pausas largas no
+cuenta como éxito conversacional. Este ensayo puede tardar varios minutos
+adicionales; ejecutarlo sin conversaciones ni otras cargas intensivas.
+
+La alternativa corta es solo diagnóstica. La activación usa exclusivamente
+las métricas 60/150, que corresponden al navegador actual; en estos informes
+también rechaza pausas estimadas superiores a un segundo. Si 35/80 mejora
+los resultados, primero habrá que integrar esa fragmentación en la web y
+verificar reproducción antes de basar una activación en ella.
