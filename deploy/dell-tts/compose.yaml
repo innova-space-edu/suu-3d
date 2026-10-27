@@ -1,0 +1,37 @@
+services:
+  suu-tts:
+    container_name: suu-tts
+    image: suu-tts-local:1
+    build: .
+    restart: unless-stopped
+    init: true
+    user: "${TTS_UID:?run bootstrap.sh}:${TTS_GID:?run bootstrap.sh}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: "1.0"
+    mem_limit: 1g
+    pids_limit: 96
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=${TTS_UID},gid=${TTS_GID}
+    ports:
+      - "127.0.0.1:8096:8096"
+    volumes:
+      - ./models:/voices:ro
+      - ./secrets/tts_api_key.txt:/run/secrets/tts_api_key:ro
+    environment:
+      PIPER_API_TOKEN_FILE: /run/secrets/tts_api_key
+      PIPER_MODEL: /voices/es_AR-daniela-high.onnx
+      HOME: /tmp
+      XDG_CACHE_HOME: /tmp
+      OMP_NUM_THREADS: "1"
+    networks: [portal_default]
+    healthcheck:
+      test: ["CMD","python","-c","import urllib.request;urllib.request.urlopen('http://127.0.0.1:8096/health',timeout=2)"]
+      interval: 15s
+      timeout: 6s
+      retries: 8
+      start_period: 45s
+networks:
+  portal_default:
+    external: true
