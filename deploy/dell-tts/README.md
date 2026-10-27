@@ -90,3 +90,37 @@ cd ~/suu-tts && sudo docker compose stop suu-tts
 ```
 
 No ejecutar `docker compose down` sobre la intranet, Qwen o Whisper.
+# Optimización de instalación existente
+
+Desde la copia actualizada del repositorio, ejecutar como usuario propietario:
+
+```bash
+bash deploy/dell-tts/upgrade.sh --dry-run
+bash deploy/dell-tts/upgrade.sh --apply
+curl -fsS http://127.0.0.1:8096/health
+sudo docker exec suu-tts python /app/benchmark.py
+```
+
+`upgrade.sh` conserva los modelos, la clave y `.env`, respalda los archivos de
+servicio y reconstruye solamente `suu-tts`. No usar `bootstrap.sh` para actualizar:
+su protección contra sobrescrituras es deliberada. La nueva salud informa
+`threads: 1` y `optimized: true` después del precalentamiento.
+
+Para comparar antes de actualizar, se puede ejecutar el benchmark nuevo por stdin:
+`sudo docker exec -i suu-tts python - < deploy/dell-tts/benchmark.py`.
+Usar las mismas condiciones de carga en ambas mediciones, sin otra conversación
+activa. El benchmark hace seis síntesis y no guarda ni imprime texto o claves.
+RTF = tiempo de síntesis / duración de audio: por encima de 1 habrá pausas aunque
+se divida el texto. Por debajo de 0,5 deja margen para red y Qwen.
+
+La sesión ONNX es persistente, secuencial, con un hilo y sin espera activa,
+ajustada al límite de una CPU del contenedor. `OMP_NUM_THREADS` por sí solo no
+configura los hilos propios de ONNX. No aumentar núcleos o cambiar de voz hasta
+comparar el RTF; aumentar núcleos de Piper puede perjudicar Qwen e intranet.
+El proxy expone `Server-Timing`, `X-Suu-Synthesis-Rtf` y
+`X-Suu-Audio-Seconds` para separar cómputo local y tiempo total de ida y vuelta.
+
+La web aún recibe la respuesta completa de Qwen antes de iniciar Piper. La
+fragmentación reduce la espera de voz, pero no elimina esa espera inicial.
+La sincronización labial de Piper sigue siendo estimada por texto y duración,
+anclada al reloj del audio; no es alineación fonética real.
