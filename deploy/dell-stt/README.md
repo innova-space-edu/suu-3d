@@ -62,6 +62,36 @@ La primera instalación termina solo cuando la imagen construye, el
 modelo está cacheado y el contenedor comienza a ejecutarse.
 Si aparece otro error de dependencias, conservar el log sin credenciales.
 
+## Reparación de la caché Xet de Hugging Face en contenedor de solo lectura
+
+En el segundo intento la imagen Docker se construyó, pero durante
+`WhisperModel("base")` Hugging Face Xet intentó escribir
+`/.cache/huggingface/xet/logs` fuera del volumen persistente.
+
+La configuración corregida conserva `read_only: true` y dirige
+`HOME`, `HF_HOME`, `HF_XET_CACHE` y `XDG_CACHE_HOME` dentro
+del montaje **escribible** `~/suu-stt/models:/models`.
+No se necesita dar permisos de escritura sobre la raíz ni pasar
+credenciales de Hugging Face: el modelo base es público y una advertencia
+sobre solicitudes sin `HF_TOKEN` no implica que la descarga falle.
+
+`bootstrap.sh` reconoce tanto los archivos originales del primer intento
+como los del commit `69fc4139`; respalda únicamente diferencias que
+coincidan exactamente con las versiones conocidas. No sobrescribe archivos
+personalizados, no borra archivos de modelo parcialmente descargados y
+conserva el token.
+
+Reintentar:
+
+```bash
+cd ~/suu-3d && git pull --ff-only
+cd deploy/dell-stt
+bash bootstrap.sh --dry-run
+bash bootstrap.sh --apply
+sudo docker ps --filter name=suu-stt
+curl -fsS http://127.0.0.1:8095/health
+```
+
 ## 1. Instalar exclusivamente STT en Debian
 
 ```bash

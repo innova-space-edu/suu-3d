@@ -16,7 +16,7 @@ fi
 # Only migrate the exact v1 files already copied by the previously failed
 # installer. Unknown/manual edits are NEVER overwritten.
 files=(compose.yaml Dockerfile requirements.txt service.py preload.py)
-previous_revision="9d9bcec1d9c0333840273683efbf7650fb94d6a0"
+previous_revisions=("9d9bcec1d9c0333840273683efbf7650fb94d6a0" "69fc4139a6f30cdc80c5726d0572d6b135f031b6")
 migrate=()
 [[ ! -L "$target" ]] || { echo "Destino simbólico no permitido"; exit 1; }
 for f in "${files[@]}"; do
@@ -26,7 +26,14 @@ for f in "${files[@]}"; do
    echo "Archivo de destino no es regular: $target/$f"; exit 1;
   }
   if ! cmp -s "$src/$f" "$target/$f"; then
-   if git -C "$src" show "$previous_revision:deploy/dell-stt/$f" 2>/dev/null | cmp -s - "$target/$f"; then
+   known_old=false
+   for rev in "${previous_revisions[@]}"; do
+    if git -C "$src" show "$rev:deploy/dell-stt/$f" 2>/dev/null | cmp -s - "$target/$f"; then
+     known_old=true
+     break
+    fi
+   done
+   if [[ "$known_old" == true ]]; then
     migrate+=("$f")
    else
     echo "Archivo modificado o desconocido: $target/$f. No se sobrescribirá"; exit 1;
@@ -35,7 +42,7 @@ for f in "${files[@]}"; do
  fi
 done
 if (( ${#migrate[@]} > 0 )); then
- echo "Migración segura: ${migrate[*]} (solo versión anterior conocida)"
+ echo "Migración segura: ${migrate[*]} (solo revisiones anteriores verificadas)"
 fi
 echo "Fuente: $src"
 echo "Destino: $target"

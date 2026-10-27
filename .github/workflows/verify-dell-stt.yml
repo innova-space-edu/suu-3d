@@ -19,6 +19,30 @@ jobs:
           persist-credentials: false
       - name: Verify STT image builds from binary wheels
         run: docker build --pull --progress=plain --tag suu-stt-ci:verify deploy/dell-stt
+
+      - name: Verify Hugging Face / Xet cache is writable with read-only rootfs
+        run: |
+          model_dir="$(mktemp -d)"
+          trap 'rm -rf "$model_dir"' EXIT
+          docker run --rm --network none --read-only --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$model_dir,dst=/models" \
+            --env HOME=/models \
+            --env XDG_CACHE_HOME=/models/.cache \
+            --env HF_HOME=/models/.cache/huggingface \
+            --env HF_XET_CACHE=/models/.cache/huggingface/xet \
+            --entrypoint python suu-stt-ci:verify -c '
+          import os
+          from pathlib import Path
+          from huggingface_hub import constants
+          assert constants.HF_HOME == "/models/.cache/huggingface"
+          assert constants.HF_XET_CACHE == "/models/.cache/huggingface/xet"
+          for key in ("HOME", "XDG_CACHE_HOME", "HF_HOME", "HF_XET_CACHE"):
+              path = Path(os.environ[key])
+              assert path.is_relative_to(Path("/models"))
+              path.mkdir(parents=True, exist_ok=True)
+              (path / ".write-check").write_text("ok")
+          print("Read-only root + writable cache: OK")
+          '
       - name: Verify PyAV and faster-whisper imports
         run: >-
           docker run --rm --network none --entrypoint python suu-stt-ci:verify
