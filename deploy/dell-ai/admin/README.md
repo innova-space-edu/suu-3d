@@ -25,7 +25,7 @@ convertir `ejecutar_comando_aislado` en shell del anfitrión ni montar
 No pegar claves, credenciales de Tailscale o tokens en ChatGPT.
 
 ```bash
-ssh estefano@servidordebian.tailef3faa.ts.net
+ssh <usuario-autorizado>@<host-tailscale-privado>
 git clone https://github.com/innova-space-edu/suu-3d.git ~/suu-3d
 cd ~/suu-3d/deploy/dell-ai
 bash admin/bootstrap-suu.sh --dry-run
