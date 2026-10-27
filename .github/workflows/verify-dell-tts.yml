@@ -1,0 +1,29 @@
+name: Verify Dell Piper TTS Docker
+on:
+  pull_request:
+    paths:
+      - 'deploy/dell-tts/**'
+      - '.github/workflows/verify-dell-tts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-piper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate Python and Bash syntax
+        run: |
+          python3 -m py_compile deploy/dell-tts/service.py
+          bash -n deploy/dell-tts/bootstrap.sh
+      - name: Build CPU Piper image with prebuilt wheels
+        run: docker build --pull --progress=plain -t suu-tts-ci:verify deploy/dell-tts
+      - name: Verify Piper wheel and API imports
+        run: >-
+          docker run --rm --network none --entrypoint python suu-tts-ci:verify
+          -c "from piper import PiperVoice; import fastapi; print('Piper Python import: OK')"
