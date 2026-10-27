@@ -6,6 +6,7 @@ import {spokenText,fairSpokenText,fairAudienceText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import {selectBrowserVoice} from "@/lib/browser-voice";
+import {streamPiperReply} from "@/lib/chat-stream";
 import {playPiperSpeech} from "@/lib/piper-playback";
 import {preferOnDeviceRecognition} from "@/lib/local-recognition";
 import {fairResponse} from "@/lib/fair-response";
@@ -37,6 +38,8 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
  const endRef=useRef(onAnnouncementEnd),availableRef=useRef(onAvailable);endRef.current=onAnnouncementEnd;availableRef.current=onAvailable;
  const reportAvailable=()=>availableRef.current?.(!stopSignal.current&&!announcing.current&&!humanSpeaking.current&&(phaseRef.current==="idle"||phaseRef.current==="listening"));
  const recognizer=useRef<Recognition|null>(null),audio=useRef<HTMLAudioElement|null>(null),audioUrl=useRef<string|null>(null);
+ const mutedRef=useRef(muted);mutedRef.current=muted;
+ useEffect(()=>{if(audio.current)audio.current.muted=muted},[muted]);
  const onTurnRef=useRef(onTurn),stopSignal=useRef(false),history=useRef(initial.slice(-14)),abort=useRef<AbortController|null>(null),timer=useRef<ReturnType<typeof setInterval>|null>(null),phaseRef=useRef("idle"),listeningRef=useRef(false);
  onTurnRef.current=onTurn;
  const setPhaseNow=(next:typeof phase)=>{phaseRef.current=next;setPhase(next);reportAvailable()};
@@ -45,7 +48,7 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
  useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();microphone.stop();releaseAudio()},[releaseAudio,microphone.stop]);
  const finishSpeech=(success=true)=>{releaseAudio();if(announcing.current){announcing.current=false;endRef.current?.(success)}setPhaseNow("idle");restart()};
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
- const speak=async(text:string)=>{
+ const speak=async(text:string,skipPiper=false)=>{
   const displayText=fairMode?fairAudienceText(text):text;
   const speechLocale=(voiceId.startsWith("browser:")?window.speechSynthesis?.getVoices().find(v=>"browser:"+v.voiceURI===voiceId)?.lang:voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0])||language;
   text=(fairMode?fairSpokenText:spokenText)(text,speechLocale);
@@ -54,14 +57,14 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
   if(muted){finishSpeech(false);return}
   releaseAudio();const ticket=speechGeneration.current;setPhaseNow("speaking");setSubtitle(displayText);
   // Preserve lip motion and microphone cycles with locally synthesized WAV.
-  if(ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
+  if(!skipPiper&&ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
    const ctl=new AbortController();piperAbort.current=ctl;
    let played=false;
    try{
     await playPiperSpeech(text,ctl.signal,(player,url,phrase)=>{
      if(stopSignal.current||ticket!==speechGeneration.current)throw new Error("Reproducción cancelada");
      if(audioUrl.current)URL.revokeObjectURL(audioUrl.current);
-     audioUrl.current=url;audio.current=player;
+     audioUrl.current=url;audio.current=player;player.muted=mutedRef.current;
      lips.audio(player,phrase,[]);
      void meter.start(player);
      played=true;
@@ -131,6 +134,27 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
   const messages=[...history.current,{role:"user" as const,content:text}].slice(-16);history.current=messages;
   const ctl=new AbortController();abort.current=ctl;
   try{
+   if(!fairMode&&!muted&&ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
+    releaseAudio();const ticket=speechGeneration.current;piperAbort.current=ctl;
+    const answer=await streamPiperReply({messages,domain,locale:language,signal:ctl.signal,
+     onText:reply=>{if(!stopSignal.current&&ticket===speechGeneration.current)setSubtitle(reply)},
+     onResult:data=>{
+      if(stopSignal.current||ticket!==speechGeneration.current)return;
+      history.current=[...messages,{role:"assistant" as const,content:data.reply}].slice(-16);
+      setProvider(data.provider);onTurnRef.current(text,data.reply,data.provider);
+     },
+     onClip:(player,url,phrase)=>{
+      if(stopSignal.current||ticket!==speechGeneration.current)throw new Error("Reproducción cancelada");
+      audioUrl.current=url;audio.current=player;player.muted=mutedRef.current;
+      lips.audio(player,phrase,[]);void meter.start(player);
+      player.onplay=()=>{if(!stopSignal.current&&ticket===speechGeneration.current)setPhaseNow("speaking")};
+     },
+    });
+    if(stopSignal.current||ticket!==speechGeneration.current)return;
+    if(answer.voiceError&&!answer.spoken)await speak(answer.result.reply,true);
+    else finishSpeech(!answer.voiceError);
+    return;
+   }
    let data:{reply?:string;provider?:string};
    if(fairMode)data={reply:fairResponse(messages),provider:"Catálogo Expo · local"};
    else{
@@ -143,7 +167,7 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
    history.current=[...messages,{role:"assistant" as const,content:reply}].slice(-16);
    setProvider(String(data.provider||""));onTurnRef.current(text,reply,String(data.provider||""));
    await speak(reply);
-  }catch(e){if(stopSignal.current)return;setPhaseNow("error");setSubtitle(e instanceof Error?e.message:"No se pudo completar la respuesta. Pulsa el micrófono para reintentar.")}
+  }catch(e){if(stopSignal.current||ctl.signal.aborted)return;releaseAudio();setPhaseNow("error");setSubtitle(e instanceof Error?e.message:"No se pudo completar la respuesta. Pulsa el micrófono para reintentar.")}
  };
  async function listen(){
   if(stopSignal.current||listeningRef.current)return;

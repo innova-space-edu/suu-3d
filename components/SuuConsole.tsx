@@ -1,6 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {selectBrowserVoice} from "@/lib/browser-voice";
+import {streamPiperReply} from "@/lib/chat-stream";
 import {playPiperSpeech} from "@/lib/piper-playback";
 import {preferOnDeviceRecognition} from "@/lib/local-recognition";
 import dynamic from "next/dynamic";
@@ -37,7 +38,7 @@ export default function SuuConsole(){
  const toggleFullScreen=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await visualPanel.current?.requestFullscreen()}catch{setNotice("El navegador no permite pantalla completa en esta vista.")}};
  useEffect(()=>{const change=()=>setFullScreen(Boolean(document.fullscreenElement));document.addEventListener("fullscreenchange",change);return()=>document.removeEventListener("fullscreenchange",change)},[]);
  useEffect(()=>{if((voiceOnly||fairMode)&&document.fullscreenElement)void document.exitFullscreen().catch(()=>{})},[voiceOnly,fairMode]);
- const voiceGeneration=useRef(0);
+ const voiceGeneration=useRef(0),sendGeneration=useRef(0);
  const piperAbort=useRef<AbortController|null>(null);
  const recognition=useRef<SpeechRecognitionLike|null>(null),audioRef=useRef<HTMLAudioElement|null>(null),audioUrl=useRef<string|null>(null),speechTimer=useRef<ReturnType<typeof setInterval>|null>(null),scroll=useRef<HTMLDivElement>(null),liveSpeech=useRef(false);
  const load=useCallback(async()=>{try{const r=await fetch("/api/session",{cache:"no-store"});if(r.ok)setConfig(await r.json())}catch{setNotice("No se pudo consultar el estado del servidor.")}finally{setBooting(false)}},[]);
@@ -48,14 +49,14 @@ export default function SuuConsole(){
  useEffect(()=>{scroll.current?.scrollTo({top:scroll.current.scrollHeight,behavior:"smooth"})},[messages,sending]);
  const stopVoice=useCallback(()=>{voiceGeneration.current++;piperAbort.current?.abort();piperAbort.current=null;lips.stop();meter.stop();speechSynthesis?.cancel();if(speechTimer.current)clearInterval(speechTimer.current);speechTimer.current=null;if(audioRef.current){audioRef.current.onended=null;audioRef.current.onerror=null;audioRef.current.pause();audioRef.current.src="";audioRef.current=null}if(audioUrl.current){URL.revokeObjectURL(audioUrl.current);audioUrl.current=null}setSpeaking(false);setEnergy(0)},[meter.stop,lips.stop]);
  useEffect(()=>()=>{recognition.current?.stop();microphone.stop();stopVoice()},[stopVoice,microphone.stop]);
- const synthesize=async(text:string)=>{
+ const synthesize=async(text:string,skipPiper=false)=>{
   const selectedLocale=voices.find(v=>v.id===voiceId)?.locale;
   const speechLocale=(selectedLocale&&selectedLocale!=="multi"?selectedLocale:browserVoices.find(v=>"browser:"+v.voiceURI===voiceId)?.lang)||voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0]||language;
   text=spokenText(text,speechLocale);if(!sound||!text)return;
   stopVoice();const ticket=voiceGeneration.current;
   // The existing automatic mode prioritizes Dell Piper when configured;
   // after any failure it falls back to an installed voice or EDUAI.
-  if(config.ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
+  if(!skipPiper&&config.ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
    const ctl=new AbortController();piperAbort.current=ctl;
    let played=false;
    try{
@@ -113,7 +114,57 @@ export default function SuuConsole(){
   utterance.onend=stopVoice;utterance.onerror=()=>{stopVoice();setNotice("La voz del dispositivo no pudo reproducirse.")};
   lips.utterance(utterance);window.speechSynthesis.speak(utterance);
  };
- const send=async(value=draft,selected=domain)=>{const text=value.trim();if(!text||sending)return;if(!config.authenticated){setNotice("Debes iniciar sesión antes de conversar.");return}stopVoice();setDraft("");const history=[...messages,{role:"user" as const,content:text}].slice(-16);setMessages(history);setSending(true);try{const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history,domain:selected})});const data=await r.json();if(!r.ok)throw new Error(data.error||"No disponible");const reply=String(data.reply||"");setMessages([...history,{role:"assistant",content:reply}]);setUsedProvider(data.provider?(data.provider+(data.fallbackUsed?" · respaldo activo":"")):"");if(data.bridgeWarning)setNotice(data.bridgeWarning);if(reply)void synthesize(reply)}catch(e){setNotice(e instanceof Error?e.message:"No se pudo responder")}finally{setSending(false)}};
+ const send=async(value=draft,selected=domain)=>{
+  const text=value.trim();if(!text||sending)return;
+  if(!config.authenticated){setNotice("Debes iniciar sesión antes de conversar.");return}
+  stopVoice();const generation=++sendGeneration.current,ticket=voiceGeneration.current;
+  setDraft("");const history=[...messages,{role:"user" as const,content:text}].slice(-16);
+  setMessages(history);setSending(true);
+  const streaming=sound&&config.ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela");
+  const ctl=new AbortController();
+  if(streaming)piperAbort.current=ctl;
+  try{
+   if(streaming){
+    const answer=await streamPiperReply({messages:history,domain:selected,locale:language,signal:ctl.signal,
+     onText:reply=>{if(generation===sendGeneration.current&&!ctl.signal.aborted)setMessages([...history,{role:"assistant",content:reply}])},
+     onResult:data=>{
+      if(generation!==sendGeneration.current||ctl.signal.aborted)return;
+      setUsedProvider(data.provider+(data.fallbackUsed?" · respaldo activo":""));
+      if(data.bridgeWarning)setNotice(data.bridgeWarning);
+      setSending(false);
+     },
+     onClip:(player,url,phrase)=>{
+      if(ticket!==voiceGeneration.current)throw new Error("Reproducción cancelada");
+      audioUrl.current=url;audioRef.current=player;
+      lips.audio(player,phrase,[]);player.onplay=()=>{if(ticket===voiceGeneration.current)setSpeaking(true)};void meter.start(player);
+     },
+    });
+    if(ticket!==voiceGeneration.current)return;
+    if(answer.voiceError&&!answer.spoken){
+     setNotice("Piper no pudo iniciar; se usará la voz de respaldo.");
+     void synthesize(answer.result.reply,true);
+    }else{
+     stopVoice();
+     if(answer.voiceError)setNotice("La voz se interrumpió. La respuesta completa está en el chat.");
+    }
+    return;
+   }
+   const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:history,domain:selected})});
+   const data=await r.json();if(!r.ok)throw new Error(data.error||"No disponible");
+   if(generation!==sendGeneration.current)return;
+   const reply=String(data.reply||"");setMessages([...history,{role:"assistant",content:reply}]);
+   setUsedProvider(data.provider?(data.provider+(data.fallbackUsed?" · respaldo activo":"")):"");
+   if(data.bridgeWarning)setNotice(data.bridgeWarning);if(reply)void synthesize(reply);
+  }catch(e){
+   if(generation===sendGeneration.current&&!ctl.signal.aborted){
+    setNotice(e instanceof Error?e.message:"No se pudo responder");
+    if(streaming&&ticket===voiceGeneration.current)stopVoice();
+   }
+  }finally{
+   if(generation===sendGeneration.current)setSending(false);
+   if(piperAbort.current===ctl)piperAbort.current=null;
+  }
+ };
  const login=async(e:React.FormEvent)=>{e.preventDefault();const r=await fetch("/api/session",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})});const data=await r.json();if(!r.ok){setLoginError(data.error||"Acceso denegado");return}setCode("");setDemo(false);await load()};
  const logout=async()=>{stopVoice();await fetch("/api/session",{method:"DELETE"});setMessages([welcome]);setDemo(false);await load()};
  const toggleMic=async()=>{
@@ -139,7 +190,7 @@ export default function SuuConsole(){
   <button type="button" onClick={()=>face.active?face.stop():void face.start()} title={face.active?"Apagar cámara":"Seguir tu posición con la mirada (sin mostrar video)"} aria-label={face.active?"Apagar cámara":"Activar mirada con cámara"} disabled={face.status==="loading"}>{face.active?<CameraOff size={18}/>:<Camera size={18}/>}</button>
   <button type="button" onClick={()=>{stopVoice();recognition.current?.stop();microphone.stop();setListening(false);setVoiceOnly(true)}} title="Solo conversación por voz" aria-label="Modo solo voz" disabled={!config.authenticated}><Headphones size={18}/></button>
   <button type="button" onClick={()=>void toggleFullScreen()} title="Pantalla completa" aria-label={fullScreen?"Salir de pantalla completa":"Pantalla completa"}>{fullScreen?<Minimize2 size={18}/>:<Maximize2 size={18}/>}</button><button onClick={()=>setScene(s=>s==="avatar"?"solar":"avatar")} title={scene==="avatar"?"Abrir simulación":"Volver al rostro"} aria-label="Alternar simulación"><Orbit size={18}/></button><button onClick={()=>setSolid(v=>!v)} title="Alternar superficie sólida" aria-label="Superficie sólida"><Cpu size={18}/></button><button onClick={()=>setQuality(v=>v==="eco"?"high":"eco")} title="Calidad gráfica" aria-label="Calidad gráfica"><Activity size={18}/></button><button onClick={()=>setChatOpen(v=>!v)} title="Mostrar u ocultar chat" aria-label="Alternar chat"><AudioLines size={18}/></button></div></div></section>
-   {chatOpen&&<aside className="sidePanel chatPanel"><div className="chatHeader"><div><strong>Conversa con SUU</strong><small>Asistente inteligente · {usedProvider||domains[domain]}</small></div><button onClick={()=>void inspectBridge()} title="Consultar herramientas" aria-label="Consultar herramientas"><CircleHelp size={18}/></button></div><div className="messages" ref={scroll} aria-live="polite">{messages.map((m,i)=><div key={i} className={"bubble "+(m.role==="assistant"?"assistant":"user")}><small>{m.role==="assistant"?"SUU":"TÚ"}</small><p>{m.content}</p></div>)}{sending&&<p className="muted">SUU está procesando tu solicitud…</p>}</div>{config.livekit&&config.authenticated&&!fairMode&&<SuuLiveKit noiseReduction={noiseReduction} onJoin={()=>{stopVoice();recognition.current?.stop();microphone.stop();setListening(false)}} onAudio={(active,level)=>{liveSpeech.current=active;setSpeaking(active);setEnergy(level)}} onError={setNotice}/>}<div className="suggestions">{[{label:"Explica la IA",domain:"general" as Domain,text:"¿Qué puedes hacer hoy?"},{label:"Simulaciones científicas",domain:"scientific" as Domain,text:"¿Cómo organizar una simulación de física?"},{label:"Generar imágenes",domain:"visual" as Domain,text:"¿Cómo crear una infografía científica?"}].map(item=><button key={item.label} onClick={()=>{setDomain(item.domain);void send(item.text,item.domain)}}>{item.label}<ChevronRight size={14}/></button>)}</div>{notice&&<div className="notice" role="status">{notice}<button aria-label="Cerrar notificación" onClick={()=>setNotice("")}>×</button></div>}{listening&&<small className="muted" role="status">{microphone.mode==="standard"?"Micrófono · reducción estándar activa":"Micrófono · entrada gestionada por el navegador"}</small>}<form className="composer" onSubmit={e=>{e.preventDefault();void send()}}><textarea value={draft} onChange={e=>setDraft(e.target.value)} rows={2} placeholder="Escribe o habla con SUU..." maxLength={4500} aria-label="Mensaje" onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send()}}}/><div className="composeActions"><div><button type="button" onClick={toggleMic} aria-label={listening?"Detener micrófono":"Activar micrófono"}>{listening?<MicOff size={18}/>:<Mic size={18}/>}</button><button type="button" onClick={()=>{setSound(v=>!v);stopVoice()}} aria-label={sound?"Silenciar":"Activar sonido"}>{sound?<Volume2 size={18}/>:<VolumeX size={18}/>}</button><button type="button" onClick={stopVoice} aria-label="Detener voz"><Square size={15}/></button></div><button className="send" disabled={!draft.trim()||sending||!config.authenticated} aria-label="Enviar mensaje"><Send size={19}/></button></div></form></aside>}
+   {chatOpen&&<aside className="sidePanel chatPanel"><div className="chatHeader"><div><strong>Conversa con SUU</strong><small>Asistente inteligente · {usedProvider||domains[domain]}</small></div><button onClick={()=>void inspectBridge()} title="Consultar herramientas" aria-label="Consultar herramientas"><CircleHelp size={18}/></button></div><div className="messages" ref={scroll} aria-live="polite" aria-busy={sending}>{messages.map((m,i)=><div key={i} className={"bubble "+(m.role==="assistant"?"assistant":"user")}><small>{m.role==="assistant"?"SUU":"TÚ"}</small><p>{m.content}</p></div>)}{sending&&<p className="muted">SUU está procesando tu solicitud…</p>}</div>{config.livekit&&config.authenticated&&!fairMode&&<SuuLiveKit noiseReduction={noiseReduction} onJoin={()=>{stopVoice();recognition.current?.stop();microphone.stop();setListening(false)}} onAudio={(active,level)=>{liveSpeech.current=active;setSpeaking(active);setEnergy(level)}} onError={setNotice}/>}<div className="suggestions">{[{label:"Explica la IA",domain:"general" as Domain,text:"¿Qué puedes hacer hoy?"},{label:"Simulaciones científicas",domain:"scientific" as Domain,text:"¿Cómo organizar una simulación de física?"},{label:"Generar imágenes",domain:"visual" as Domain,text:"¿Cómo crear una infografía científica?"}].map(item=><button key={item.label} onClick={()=>{setDomain(item.domain);void send(item.text,item.domain)}}>{item.label}<ChevronRight size={14}/></button>)}</div>{notice&&<div className="notice" role="status">{notice}<button aria-label="Cerrar notificación" onClick={()=>setNotice("")}>×</button></div>}{listening&&<small className="muted" role="status">{microphone.mode==="standard"?"Micrófono · reducción estándar activa":"Micrófono · entrada gestionada por el navegador"}</small>}<form className="composer" onSubmit={e=>{e.preventDefault();void send()}}><textarea value={draft} onChange={e=>setDraft(e.target.value)} rows={2} placeholder="Escribe o habla con SUU..." maxLength={4500} aria-label="Mensaje" onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();void send()}}}/><div className="composeActions"><div><button type="button" onClick={toggleMic} aria-label={listening?"Detener micrófono":"Activar micrófono"}>{listening?<MicOff size={18}/>:<Mic size={18}/>}</button><button type="button" onClick={()=>{setSound(v=>!v);stopVoice()}} aria-label={sound?"Silenciar":"Activar sonido"}>{sound?<Volume2 size={18}/>:<VolumeX size={18}/>}</button><button type="button" onClick={stopVoice} aria-label="Detener voz"><Square size={15}/></button></div><button className="send" disabled={!draft.trim()||sending||!config.authenticated} aria-label="Enviar mensaje"><Send size={19}/></button></div></form></aside>}
   </div><footer className="footer"><span>● SUU SYSTEMS</span><span>VISUAL ENGINE · EDUAI · SCIENTIFICBRAIN</span><span>© INNOVA SPACE EDUCATION</span></footer>
   {face.status==="error"&&face.error&&<div className="cameraError" role="alert">{face.error} <button onClick={face.stop}>Cerrar</button></div>}
   {voiceOnly&&config.authenticated&&<SuuVoiceMode onClose={()=>setVoiceOnly(false)} ttsLocal={Boolean(config.ttsLocal)} sttAvailable={Boolean(config.stt)} onTurn={(user,reply,provider)=>{setMessages(prev=>[...prev,{role:"user" as const,content:user},{role:"assistant" as const,content:reply}].slice(-16));setUsedProvider(provider)}} noiseReduction={noiseReduction} initial={messages} domain={domain} language={language} voiceId={voiceId} quality={quality} solid={solid} tracking={face.motion} cameraActive={face.status==="tracking"}/>}

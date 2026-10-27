@@ -89,7 +89,49 @@ export function providerStatus(): Status[] {
   }));
 }
 
-export async function chatWithFallback(messages: ChatMessage[], system: string) {
+export type ChatStreamOptions = {signal?: AbortSignal; onDelta?: (text: string) => void};
+
+/** OpenAI-compatible SSE. Bound events, preserve UTF-8 and reject broken streams. */
+export async function readChatCompletionStream(response: Response, onDelta: (text: string) => void) {
+  if (!response.body) throw new Error("Missing completion stream");
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = "", event = "", reply = "", complete = false;
+  const consume = () => {
+    const payload = event.trim(); event = "";
+    if (!payload) return;
+    if (payload === "[DONE]") {complete = true; return;}
+    const data = JSON.parse(payload);
+    if (data.error) throw new Error("Provider stream error");
+    const choice = data.choices?.[0];
+    const delta = choice?.delta?.content;
+    // Never speak reasoning_content or tool-call arguments.
+    if (typeof delta === "string" && delta && !complete) {
+      if (reply.length + delta.length > 12000) throw new Error("Completion too long");
+      reply += delta; onDelta(delta);
+    }
+    if (choice?.finish_reason) complete = true;
+  };
+  try {
+    while (true) {
+      const {value, done} = await reader.read();
+      buffer += done ? decoder.decode() : decoder.decode(value, {stream: true});
+      if (buffer.length > 65536) throw new Error("Stream event too large");
+      let end: number;
+      while ((end = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, end).replace(/\r$/, ""); buffer = buffer.slice(end + 1);
+        if (!line) consume();
+        else if (line.startsWith("data:")) event += line.slice(5).trimStart() + "\n";
+        if (event.length > 65536) throw new Error("Stream event too large");
+      }
+      if (done) {if (buffer.startsWith("data:")) event += buffer.slice(5); consume(); break;}
+      if (complete) break;
+    }
+    if (!complete || !reply.trim()) throw new Error("Incomplete completion stream");
+    return reply;
+  } finally {await reader.cancel().catch(() => {}); reader.releaseLock();}
+}
+
+export async function chatWithFallback(messages: ChatMessage[], system: string, options: ChatStreamOptions = {}) {
   const available = providerConfigs().slice(0, 5);
   if (!available.length) throw new Error("No hay proveedor de IA configurado para SUU.");
   const failures: string[] = [];
@@ -100,7 +142,17 @@ export async function chatWithFallback(messages: ChatMessage[], system: string) 
     const p = available[i];
     const remaining = totalBudgetMs - (Date.now() - start);
     if (remaining < 2000) break;
+    if (options.signal?.aborted) throw new Error("Conversación cancelada");
+    let emitted = false, firstTextMs: number | undefined;
+    const emit = (text: string) => {
+      emitted = true;
+      firstTextMs ??= Date.now() - start;
+      options.onDelta?.(text);
+    };
     const controller = new AbortController();
+    const cancel = () => controller.abort();
+    options.signal?.addEventListener("abort", cancel, {once: true});
+    if (options.signal?.aborted) cancel();
     const timeout = Math.min(p.id === "dell" ? 22000 : 10500, remaining - 1200);
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
@@ -128,7 +180,7 @@ export async function chatWithFallback(messages: ChatMessage[], system: string) 
               ? system + "\nPara esta respuesta de voz, usa español natural y sé breve: 1-3 frases, sin listas, máximo 45 palabras. Responde directamente a lo preguntado."
               : system,
           }, ...messages],
-          stream: false,
+          stream: Boolean(options.onDelta),
         }),
       });
       if (!response.ok) {
@@ -142,21 +194,32 @@ export async function chatWithFallback(messages: ChatMessage[], system: string) 
         console.warn("[SUU failover]", p.id, status);
         continue;
       }
-      const data = await response.json();
-      const reply = data?.choices?.[0]?.message?.content;
+      let reply: unknown;
+      if (options.onDelta && response.headers.get("content-type")?.includes("text/event-stream")) {
+        reply = await readChatCompletionStream(response, emit);
+      } else {
+        const data = await response.json();
+        reply = data?.choices?.[0]?.message?.content;
+        if (options.onDelta && typeof reply === "string" && reply.trim()) emit(reply.slice(0, 12000));
+      }
       if (typeof reply !== "string" || !reply.trim()) throw new Error("Empty response");
       return {
         reply: reply.slice(0, 12000),
         provider: p.name,
         model: p.model,
         fallbackUsed: i > 0,
+        timing: {firstTextMs: firstTextMs ?? Date.now() - start, totalMs: Date.now() - start},
       };
     } catch {
+      if (options.signal?.aborted) throw new Error("Conversación cancelada");
+      // Switching providers after audible text would mix/repeat two answers.
+      if (emitted) throw new Error("Se interrumpió la respuesta de SUU. Vuelve a preguntar.");
       const timedOut = controller.signal.aborted;
       failures.push(p.name + ": " + (timedOut ? "tiempo de espera agotado" : "fallo de red o respuesta inválida"));
       console.warn("[SUU failover]", p.id, timedOut ? "timeout" : "network_or_response");
     } finally {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", cancel);
     }
   }
   throw new Error("No se pudo obtener respuesta. " + failures.join("; ") + ". Revisa los proveedores de SUU.");

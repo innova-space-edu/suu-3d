@@ -66,6 +66,13 @@ export async function POST(req:NextRequest){
    console.warn("[SUU Piper]",{reason:"invalid_wav"});
    return NextResponse.json({error:"WAV inválido",reason:"invalid_wav"},{status:503});
   }
+  const synthesis=upstream.headers.get("server-timing")?.match(/piper-synthesis;dur=([\d.]+)/)?.[1];
+  console.info("[SUU Piper timing]",{
+   totalMs:Math.round(performance.now()-startedAt),
+   synthesisMs:synthesis?Number(synthesis):null,
+   rtf:upstream.headers.has("x-suu-synthesis-rtf")?Number(upstream.headers.get("x-suu-synthesis-rtf")):null,
+   audioSeconds:upstream.headers.has("x-suu-audio-seconds")?Number(upstream.headers.get("x-suu-audio-seconds")):null,
+  });
   return new NextResponse(audio,{
    headers:{"Content-Type":"audio/wav","Cache-Control":"private, no-store",
     "X-Suu-Voice-Provider":"dell-piper",
