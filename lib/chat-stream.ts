@@ -2,7 +2,7 @@ import type {ChatMessage,Domain} from "@/lib/providers";
 import {spokenText} from "@/lib/speech-text";
 import {playPiperPhrases,type PiperClipHandler} from "@/lib/piper-playback";
 
-export type StreamReply={reply:string;provider:string;fallbackUsed?:boolean;bridgeWarning?:string;timing?:{firstTextMs:number;totalMs:number}};
+export type StreamReply={reply:string;provider:string;fallbackUsed?:boolean;bridgeWarning?:string;timing?:{firstTextMs:number;totalMs:number;delivery?:string}};
 
 /** A bounded, per-conversation queue. Closing/failing wakes a pending consumer. */
 export class PhraseQueue implements AsyncIterable<string>{
@@ -40,7 +40,7 @@ export class SpeechBuffer{
  finish(){this.drain(true)}
  private drain(final:boolean){
   while(this.pending.trim()){
-   const limit=this.part===0?90:150;
+   const limit=this.part===0?60:150;
    const front=this.pending.slice(0,limit+1);
    const boundary=/[.!?;:](?=\s)/g;
    let cut=0;
@@ -105,11 +105,11 @@ export async function streamPiperReply(options:{
  onText:(text:string)=>void;onResult:(reply:StreamReply)=>void;onClip:PiperClipHandler;
 }){
  const queue=new PhraseQueue(),audio=new AbortController(),started=performance.now();
- let spoken=false,firstTextMs:number|undefined,firstAudioMs:number|undefined,completeText="",lastUpdate=0;
+ let spoken=false,firstTextMs:number|undefined,firstPhraseMs:number|undefined,firstAudioMs:number|undefined,completeText="",lastUpdate=0;
  const cancel=()=>{queue.fail(new Error("Conversación cancelada"));audio.abort()};
  options.signal.addEventListener("abort",cancel,{once:true});
  if(options.signal.aborted)cancel();
- const splitter=new SpeechBuffer(phrase=>queue.push(phrase),options.locale);
+ const splitter=new SpeechBuffer(phrase=>{firstPhraseMs??=performance.now()-started;queue.push(phrase)},options.locale);
  const playback=playPiperPhrases(queue,audio.signal,(player,url,phrase,part)=>{
   player.addEventListener("playing",()=>{spoken=true;firstAudioMs??=performance.now()-started},{once:true});
   options.onClip(player,url,phrase,part);
@@ -123,7 +123,7 @@ export async function streamPiperReply(options:{
   splitter.finish();queue.close();options.onText(result.reply);options.onResult(result);
   const speech=await playback;
   console.info("[SUU conversation timing]",{
-   firstTextMs:Math.round(firstTextMs??chatDoneMs),chatDoneMs:Math.round(chatDoneMs),
+   firstTextMs:Math.round(firstTextMs??chatDoneMs),firstPhraseMs:firstPhraseMs===undefined?null:Math.round(firstPhraseMs),chatDoneMs:Math.round(chatDoneMs),
    firstAudioMs:firstAudioMs===undefined?null:Math.round(firstAudioMs),
    voiceInterrupted:Boolean(speech.error),provider:result.provider,
   });

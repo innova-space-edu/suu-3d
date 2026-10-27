@@ -195,7 +195,8 @@ export async function chatWithFallback(messages: ChatMessage[], system: string, 
         continue;
       }
       let reply: unknown;
-      if (options.onDelta && response.headers.get("content-type")?.includes("text/event-stream")) {
+      const delivery = options.onDelta && response.headers.get("content-type")?.includes("text/event-stream") ? "sse" : "json";
+      if (delivery === "sse") {
         reply = await readChatCompletionStream(response, emit);
       } else {
         const data = await response.json();
@@ -208,7 +209,7 @@ export async function chatWithFallback(messages: ChatMessage[], system: string, 
         provider: p.name,
         model: p.model,
         fallbackUsed: i > 0,
-        timing: {firstTextMs: firstTextMs ?? Date.now() - start, totalMs: Date.now() - start},
+        timing: {firstTextMs: firstTextMs ?? Date.now() - start, totalMs: Date.now() - start, delivery},
       };
     } catch {
       if (options.signal?.aborted) throw new Error("Conversación cancelada");

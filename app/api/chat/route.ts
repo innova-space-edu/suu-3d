@@ -34,7 +34,7 @@ export async function POST(req:NextRequest){
      const emit=(event:unknown)=>{if(!ctl.signal.aborted)stream.enqueue(encoder.encode(JSON.stringify(event)+"\n"))};
      try{
       const result=await chat(messages,domain,context,mode,{signal:ctl.signal,onDelta:text=>emit({type:"delta",text})});
-      emit({type:"done",...result,sources,bridgeWarning});
+      emit({type:"done",...result,sources:result.sources.length?result.sources:sources,bridgeWarning});
       if("timing" in result)console.info("[SUU chat timing]",{provider:result.provider,...result.timing});
      }catch(e){
       if(!ctl.signal.aborted)emit({type:"error",error:e instanceof Error?e.message:"No se pudo responder"});
@@ -48,6 +48,6 @@ export async function POST(req:NextRequest){
    return new Response(response,{headers:{"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Accel-Buffering":"no"}});
   }
   const result=await chat(messages,domain,context,mode,{signal:req.signal});
-  return NextResponse.json({...result,reply:mode==="fair"?fairAudienceText(result.reply):result.reply,sources,bridgeWarning},{headers:{"Cache-Control":"no-store"}});
+  return NextResponse.json({...result,reply:mode==="fair"?fairAudienceText(result.reply):result.reply,sources:result.sources.length?result.sources:sources,bridgeWarning},{headers:{"Cache-Control":"no-store"}});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"No se pudo responder"},{status:502})}
 }

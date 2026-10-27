@@ -2,7 +2,7 @@
 
 El modo Piper en español (Automática o voz del Dell) solicita `/api/chat` con
 `stream: true`. El proxy lee SSE compatible con OpenAI y envía eventos NDJSON:
-`delta`, `done` y `error`. El cliente forma frases de hasta 90/150 caracteres,
+`delta`, `done` y `error`. El cliente forma frases de hasta 60/150 caracteres,
 solicita la primera síntesis sin esperar el texto final y prepara como máximo un
 clip siguiente mientras reproduce el actual. Se mantiene el límite existente de
 700 caracteres hablados; el chat recibe la respuesta completa.
@@ -25,6 +25,7 @@ al terminar la reproducción, no al terminar la generación de texto.
 En la consola del navegador, `[SUU conversation timing]` muestra:
 
 - `firstTextMs`: primera porción de texto recibida.
+- `firstPhraseMs`: primer fragmento listo para enviarse a Piper.
 - `chatDoneMs`: respuesta textual completa recibida.
 - `firstAudioMs`: primer evento `playing` real, o `null` si no hubo reproducción.
 - `voiceInterrupted`: si se interrumpió la canalización de voz.
@@ -54,3 +55,33 @@ cliente: el primer audio debe arrancar mientras la respuesta de Qwen aún está
 abierta. Verifican el orden de clips y la liberación de URLs. No sustituyen una
 medición en el Dell. La síntesis y Qwen ahora pueden usar CPU a la vez; comparar
 los tiempos reales antes de afirmar una reducción concreta de latencia total.
+
+## Calidad del modelo y respuestas verificadas
+
+El Dell continúa usando Qwen3.5-0.8B Q4_K_M. La velocidad de Piper y la emisión
+por fragmentos no mejoran sus conocimientos. La tarjeta oficial del modelo
+advierte que, por su escala, está orientado a prototipos y usos específicos:
+https://huggingface.co/Qwen/Qwen3.5-0.8B
+
+En el área General, SUU resuelve expresiones aritméticas admitidas mediante un
+analizador de fracciones exactas (+, -, ×, /, paréntesis y potencias enteras
+acotadas), sin eval ni generación de números por IA. Las descripciones generales
+del sistema solar y el orden de planetas usan una base pequeña y explícita con
+fuente NASA. Preguntas astronómicas diferentes siguen pasando al modelo: esta
+base no garantiza el conocimiento general de Qwen. Las capacidades se describen
+según las funciones implementadas; no se promete control del navegador.
+
+Para evaluar el modelo crudo (sin esos guardas), desde la copia actualizada:
+
+```bash
+python3 deploy/dell-ai/admin/benchmark-quality.py
+```
+
+Compara la configuración de muestreo actual con la publicada para texto por
+Qwen. Usa 12 preguntas sintéticas por configuración, sesiones independientes y
+streaming local, sin leer conversaciones personales. Guarda respuestas y tiempos
+en un informe local privado, sin imprimir la clave ni el razonamiento oculto.
+No descarga modelos ni cambia producción. La coincidencia exacta también mide
+el cumplimiento del formato y no sustituye revisión humana. Antes de reemplazar
+el modelo por uno mayor, comparar el mismo conjunto en el candidato y observar
+RAM, tiempo y exactitud; no activar nuevos parámetros basándose solo en su nombre.
