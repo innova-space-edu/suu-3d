@@ -1,0 +1,36 @@
+services:
+  suu-stt:
+    container_name: suu-stt
+    build: .
+    image: suu-stt-local:1
+    restart: unless-stopped
+    init: true
+    user: "${STT_UID:?run bootstrap.sh}:${STT_GID:?run bootstrap.sh}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: "2.0"
+    mem_limit: 2g
+    pids_limit: 96
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=1000,gid=1000
+    ports:
+      - "127.0.0.1:8095:8095"
+    volumes:
+      - ./models:/models
+      - ./secrets/stt_api_key.txt:/run/secrets/stt_api_key:ro
+    environment:
+      STT_API_TOKEN_FILE: /run/secrets/stt_api_key
+      STT_MODEL: base
+      HF_HUB_OFFLINE: "1"
+      OMP_NUM_THREADS: "2"
+    networks: [portal_default]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8095/health',timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+networks:
+  portal_default:
+    external: true
