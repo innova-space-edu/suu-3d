@@ -6,7 +6,7 @@ import {spokenText,fairSpokenText,fairAudienceText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import {selectBrowserVoice} from "@/lib/browser-voice";
-import {requestPiperAudio} from "@/lib/piper-client";
+import {playPiperSpeech} from "@/lib/piper-playback";
 import {preferOnDeviceRecognition} from "@/lib/local-recognition";
 import {fairResponse} from "@/lib/fair-response";
 import dynamic from "next/dynamic";
@@ -56,23 +56,28 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
   // Preserve lip motion and microphone cycles with locally synthesized WAV.
   if(ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
    const ctl=new AbortController();piperAbort.current=ctl;
-   const timeout=window.setTimeout(()=>ctl.abort(),47000);
+   let played=false;
    try{
-    const blob=await requestPiperAudio(text,ctl.signal);
-    if(stopSignal.current||ticket!==speechGeneration.current)return;
-    audioUrl.current=URL.createObjectURL(blob);
-    const player=new Audio(audioUrl.current);audio.current=player;
-    lips.audio(player,text.slice(0,700),[]);
-    player.onended=()=>finishSpeech();player.onerror=()=>finishSpeech(false);
-    void meter.start(player);
-    await player.play();
+    await playPiperSpeech(text,ctl.signal,(player,url,phrase)=>{
+     if(stopSignal.current||ticket!==speechGeneration.current)throw new Error("Reproducción cancelada");
+     if(audioUrl.current)URL.revokeObjectURL(audioUrl.current);
+     audioUrl.current=url;audio.current=player;
+     lips.audio(player,phrase,[]);
+     void meter.start(player);
+     played=true;
+    });
+    if(!stopSignal.current&&ticket===speechGeneration.current)finishSpeech();
     return;
    }catch(err){
     if(stopSignal.current||ticket!==speechGeneration.current)return;
     console.warn("[SUU Piper] Voz de respaldo:",err instanceof Error?err.message:"Error desconocido");
-    // Continue into existing local browser voice / EDUAI fallback.
+    if(played){
+     // Do not repeat partially spoken sentences using another voice.
+     finishSpeech(false);
+     return;
+    }
+    // No clip started: allow the existing browser / EDUAI fallback.
    }finally{
-    window.clearTimeout(timeout);
     if(piperAbort.current===ctl)piperAbort.current=null;
    }
   }
