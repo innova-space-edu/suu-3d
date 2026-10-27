@@ -4,7 +4,9 @@
  */
 export type OnDeviceSpeechCtor={available?:(options:{langs:string[];processLocally:boolean})=>Promise<string>};
 export type OnDeviceRecognition={processLocally?:boolean};
-export async function preferOnDeviceRecognition(ctor:OnDeviceSpeechCtor,recognition:OnDeviceRecognition,locale:string):Promise<boolean>{
+export async function preferOnDeviceRecognition(constructorValue:unknown,recognitionValue:unknown,locale:string):Promise<boolean>{
+ const ctor=constructorValue as OnDeviceSpeechCtor;
+ const recognition=recognitionValue as OnDeviceRecognition;
  if(typeof ctor.available!=="function"||!("processLocally" in recognition))return false;
  try{
   // A broken experimental API must not freeze the microphone.
