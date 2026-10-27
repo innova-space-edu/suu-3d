@@ -96,3 +96,11 @@ test('cancellation while awaiting more Qwen text stops audio and the pending rea
   assert.ok(paused);
  }finally{globalThis.fetch=originalFetch;globalThis.Audio=originalAudio}
 });
+
+test('first voice fragment is ready at 60 characters without waiting for a long sentence',()=>{
+ const parts=[],splitter=new SpeechBuffer(p=>parts.push(p));
+ splitter.add('Los planetas orbitan alrededor del Sol por la atracción gravitatoria');
+ assert.equal(parts.length,1);assert.ok(parts[0].length<=60);
+ assert.equal(parts[0],'Los planetas orbitan alrededor del Sol por la atracción');
+ splitter.finish();assert.equal(parts.join(' '),'Los planetas orbitan alrededor del Sol por la atracción gravitatoria');
+});
