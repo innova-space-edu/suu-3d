@@ -1,21 +1,5 @@
-param([switch]$InstallPython)
+param([switch]$InstallPython, [switch]$CheckOllamaOnly)
 $ErrorActionPreference = 'Stop'
-$trialDir = Join-Path $env:LOCALAPPDATA 'SUU\victus-trial'
-New-Item -ItemType Directory -Force -Path $trialDir | Out-Null
-$pythonCandidates = @(
-  (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe'),
-  'C:\Program Files\Python311\python.exe'
-)
-$python = $pythonCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $python) {
-  if (-not $InstallPython) { throw 'No hay Python 3.11 real. Repite con -InstallPython para instalarlo mediante winget.' }
-  if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw 'Falta winget. Instala Python 3.11 x64 desde python.org y repite.' }
-  & winget install --id Python.Python.3.11 --exact --scope user --accept-package-agreements --accept-source-agreements
-  if ($LASTEXITCODE -ne 0) { throw 'No se pudo instalar Python 3.11.' }
-  $python = $pythonCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-  if (-not $python) { throw 'No se encontro Python311. Abre otra consola y revisa la instalacion.' }
-}
-if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) { throw 'Falta Ollama en PATH.' }
 $address = if ($env:OLLAMA_HOST) { $env:OLLAMA_HOST.Trim() } else { '127.0.0.1:11434' }
 if ($address -notmatch '://') { $address = 'http://' + $address }
 $uri = [uri]$address
@@ -35,13 +19,35 @@ $hostText = if ($uri.DnsSafeHost.Contains(':')) { '[' + $uri.DnsSafeHost + ']' }
 $base = 'http://' + $hostText + ':' + $port
 $env:OLLAMA_HOST = $base
 Write-Host ('API Ollama del ensayo: ' + $base)
+if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) { throw 'Falta curl.exe para comprobar la API.' }
+$savedErrorAction = $ErrorActionPreference
 try {
-  $request = [System.Net.HttpWebRequest]::Create($base + '/api/version')
-  $request.Proxy = $null
-  $request.Timeout = 5000
-  $response = $request.GetResponse()
-  $response.Close()
-} catch { throw ('No responde Ollama en ' + $base + '. Comprueba esa direccion; no se modifica la configuracion permanente.') }
+  $ErrorActionPreference = 'Continue'
+  $healthOutput = & curl.exe --noproxy '*' --fail --silent --show-error --connect-timeout 5 --max-time 10 ($base + '/api/version') 2>&1
+  $healthExit = $LASTEXITCODE
+} finally { $ErrorActionPreference = $savedErrorAction }
+if ($healthExit -ne 0) { throw ('Ollama: curl.exe codigo ' + $healthExit + ' en ' + $base + ': ' + ($healthOutput -join ' ')) }
+try { $health = ($healthOutput -join "`n") | ConvertFrom-Json }
+catch { throw ('La API en ' + $base + ' no devolvio JSON de version valido.') }
+if (-not $health.version) { throw ('La API en ' + $base + ' no devolvio version de Ollama.') }
+Write-Host ('Ollama responde. Version: ' + $health.version)
+if ($CheckOllamaOnly) { return }
+$trialDir = Join-Path $env:LOCALAPPDATA 'SUU\victus-trial'
+New-Item -ItemType Directory -Force -Path $trialDir | Out-Null
+$pythonCandidates = @(
+  (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe'),
+  'C:\Program Files\Python311\python.exe'
+)
+$python = $pythonCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $python) {
+  if (-not $InstallPython) { throw 'No hay Python 3.11 real. Repite con -InstallPython para instalarlo mediante winget.' }
+  if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw 'Falta winget. Instala Python 3.11 x64 desde python.org y repite.' }
+  & winget install --id Python.Python.3.11 --exact --scope user --accept-package-agreements --accept-source-agreements
+  if ($LASTEXITCODE -ne 0) { throw 'No se pudo instalar Python 3.11.' }
+  $python = $pythonCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if (-not $python) { throw 'No se encontro Python311. Abre otra consola y revisa la instalacion.' }
+}
+if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) { throw 'Falta Ollama en PATH.' }
 $osInfo = Get-CimInstance Win32_OperatingSystem
 if ($osInfo.FreePhysicalMemory -lt 3GB / 1KB) { throw 'Menos de 3 GiB de RAM disponibles. Cierra otras aplicaciones y repite.' }
 $gpuInfo = & nvidia-smi --query-gpu=name,memory.total,memory.free,driver_version --format=csv
