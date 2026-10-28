@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location("victus", Path(__file__).with_name("benchmark.py"))
@@ -13,6 +14,54 @@ spec.loader.exec_module(victus)
 
 
 class VictusTests(unittest.TestCase):
+    def test_text_only_runs_quality_and_cleans_up_without_loading_voice(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            quality = SimpleNamespace(SYSTEM="synthetic", CASES=[("arithmetic", "synthetic", "9")], normalized=lambda x: x)
+            requests = []
+            def api(route, payload=None):
+                requests.append(route)
+                if route == "/api/version":
+                    value = {"version": "synthetic"}
+                elif requests.count("/api/ps") == 1:
+                    value = {"models": []}
+                else:
+                    value = {"models": [{"name": "suu-victus-trial-123:latest", "size": 300, "size_vram": 300}]}
+                return io.BytesIO(json.dumps(value).encode())
+            result = {"answer": "9", "first_text_seconds": 1, "total_seconds": 2}
+            with patch("sys.argv", ["benchmark.py", "--text-only"]), \
+                 patch.dict(victus.os.environ, {"OLLAMA_HOST": "127.0.0.1:11434"}), \
+                 patch.object(victus.os, "name", "nt"), patch.object(victus, "ROOT", root), \
+                 patch.object(victus, "DATA", root / "data"), patch.object(victus, "api", side_effect=api), \
+                 patch.object(victus.shutil, "disk_usage", return_value=SimpleNamespace(free=10 * 1024**3)), \
+                 patch.object(victus.time, "time_ns", return_value=123), \
+                 patch.object(victus, "load_module", return_value=quality) as load, \
+                 patch.object(victus, "download") as download, patch.object(victus.subprocess, "run"), \
+                 patch.object(victus, "completion", return_value=result), \
+                 patch.object(victus, "make_voice") as voice, patch.object(victus, "cleanup_alias") as cleanup:
+                victus.main()
+                load.assert_called_once_with("quality", "benchmark-quality.py")
+                download.assert_called_once_with(*victus.FILES[0])
+                voice.assert_not_called()
+                cleanup.assert_called_once_with("suu-victus-trial-123")
+            saved = json.loads((root / "data" / "report-123.json").read_text())
+            self.assertEqual(saved["mode"], "text-only")
+            self.assertNotIn("voices", saved)
+
+    def test_text_only_download_set_excludes_all_voice_assets(self):
+        self.assertEqual(victus.trial_files(True), [victus.FILES[0]])
+        self.assertEqual(len(victus.trial_files(False)), 5)
+
+    def test_text_summary_keeps_format_scoring_and_actual_times(self):
+        rows = [{"exact_match": True, "first_text_seconds": 1, "total_seconds": 3},
+                {"exact_match": False, "first_text_seconds": 2, "total_seconds": 5},
+                {"exact_match": None, "first_text_seconds": 3, "total_seconds": 8}]
+        summary = victus.text_summary(rows)
+        self.assertEqual(summary["exact_matches"], 1)
+        self.assertEqual(summary["scored_cases"], 2)
+        self.assertEqual(summary["median_first_text_seconds"], 2)
+        self.assertEqual(summary["median_total_seconds"], 5)
+
     def test_ollama_host_accepts_current_tailscale_and_loopback(self):
         for address, expected in (("100.98.233.4:11434", "http://100.98.233.4:11434"),
                                   ("http://127.0.0.1:11434", "http://127.0.0.1:11434"),

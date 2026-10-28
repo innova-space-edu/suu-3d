@@ -1,12 +1,15 @@
 """Owner-run Windows trial: Ollama CUDA text + persistent CPU Piper voices.
 No public server, credentials, Dell changes, or production activation.
 """
+import argparse
 import hashlib
 import importlib.util
 import io
 import ipaddress
 import json
 import os
+import re
+import statistics
 from pathlib import Path
 import shutil
 import subprocess
@@ -91,6 +94,7 @@ def api(route, payload=None):
 
 def completion(alias, system, prompt, on_delta=None):
     started, first, answer, final = time.perf_counter(), None, "", None
+    phrase_times = {}
     with api("/api/chat", {"model": alias, "stream": True, "keep_alive": "5m",
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
         "options": {"temperature": .4, "num_ctx": 2048, "num_predict": 96, "num_thread": 4}}) as response:
@@ -106,6 +110,9 @@ def completion(alias, system, prompt, on_delta=None):
                 answer += text
                 if len(answer) > 4500:
                     raise ValueError("Respuesta excesiva")
+                for limit in (35, 60):
+                    if limit not in phrase_times and (len(answer) > limit or re.search(r".{20,}[.!?;:]\s", answer[:limit + 1])):
+                        phrase_times[limit] = round(time.perf_counter() - started, 3)
                 if on_delta:
                     on_delta(text)
             if event.get("done"):
@@ -116,6 +123,8 @@ def completion(alias, system, prompt, on_delta=None):
     seconds = time.perf_counter() - started
     generation = final.get("eval_duration", 0) / 1e9
     return {"answer": answer, "first_text_seconds": round(first, 3), "total_seconds": round(seconds, 3),
+        "first_phrase_35_seconds": phrase_times.get(35, round(seconds, 3)),
+        "first_phrase_60_seconds": phrase_times.get(60, round(seconds, 3)),
         "finish_reason": final.get("done_reason"), "load_seconds": round(final.get("load_duration", 0) / 1e9, 3),
         "tokens_per_second": round(final.get("eval_count", 0) / generation, 2) if generation else None}
 
@@ -153,7 +162,22 @@ def cleanup_alias(alias):
         subprocess.run(["ollama", "rm", alias], check=False)
 
 
+def trial_files(text_only):
+    return FILES[:1] if text_only else FILES
+
+
+def text_summary(rows):
+    return {"exact_matches": sum(row["exact_match"] is True for row in rows),
+            "scored_cases": sum(row["exact_match"] is not None for row in rows),
+            "median_first_text_seconds": round(statistics.median(row["first_text_seconds"] for row in rows), 3),
+            "median_total_seconds": round(statistics.median(row["total_seconds"] for row in rows), 3),
+            "note": "Coincidencia exacta incluye formato. Revisar respuestas abiertas; no mide voz ni red al Dell."}
+
+
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--text-only", action="store_true")
+    args = parser.parse_args()
     if os.name != "nt":
         raise ValueError("Este ensayo se ejecuta en el Victus Windows")
     DATA.mkdir(exist_ok=True)
@@ -167,15 +191,15 @@ def main():
         if json.load(response).get("models"):
             raise ValueError("Hay modelos Ollama cargados. Finaliza su uso y descargalos de memoria antes del ensayo")
     print(json.dumps({"ollama": version}), flush=True)
-    for file in FILES:
+    for file in trial_files(args.text_only):
         download(*file)
     quality = load_module("quality", "benchmark-quality.py")
-    speech = load_module("speech", "speech-probe.py")
+    speech = None if args.text_only else load_module("speech", "speech-probe.py")
     alias = "suu-victus-trial-" + str(time.time_ns())
     modelfile = DATA / "Modelfile"
     modelfile.write_text('FROM "' + (DATA / MODEL).as_posix() + '"\nPARAMETER num_ctx 2048\n', encoding="utf-8")
-    report = {"model": MODEL, "model_sha": FILES[0][3], "alias": alias, "ollama": version,
-              "note": "Ensayo local; no mide Vercel, Cloudflare ni reproducción web; voz Piper CPU, texto Ollama GPU/CPU según descarga real"}
+    report = {"mode": "text-only" if args.text_only else "text-and-voice", "model": MODEL, "model_sha": FILES[0][3], "alias": alias, "ollama": version,
+              "note": "Ensayo local sin red externa ni reproduccion web; no se prueba voz en modo text-only"}
     report_path = DATA / ("report-" + str(time.time_ns()) + ".json")
     try:
         subprocess.run(["ollama", "create", alias, "-f", str(modelfile)], check=True)
@@ -186,6 +210,12 @@ def main():
         with api("/api/ps") as response:
             report["loaded_models"] = json.load(response)
         print(json.dumps({"loaded_models": report["loaded_models"]}), flush=True)
+        if args.text_only:
+            loaded = next((item for item in report["loaded_models"].get("models", [])
+                           if item.get("name", "").split(":")[0] == alias), {})
+            total, vram = loaded.get("size", 0), loaded.get("size_vram", 0)
+            if total <= 0 or vram / total < .8:
+                raise ValueError("El ensayo solo texto requiere al menos 80% de memoria del modelo en GPU segun Ollama; revisar loaded_models")
         rows = []
         for case, prompt, expected in quality.CASES:
             row = {"case": case, **completion(alias, quality.SYSTEM, prompt)}
@@ -193,6 +223,10 @@ def main():
             rows.append(row)
             print(json.dumps(row, ensure_ascii=False), flush=True)
         report["quality"] = rows
+        report["text_summary"] = text_summary(rows)
+        print(json.dumps({"text_summary": report["text_summary"]}, ensure_ascii=False), flush=True)
+        if args.text_only:
+            return
         report["voices"] = {}
         for label, filename, speaker in [("sharvard", "es_ES-sharvard-medium.onnx", 1),
                                           ("daniela", "es_AR-daniela-high.onnx", 0)]:
