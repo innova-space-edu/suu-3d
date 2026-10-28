@@ -12,14 +12,14 @@ try {
     '{"version":"synthetic-test"}'
   }
   $env:OLLAMA_HOST = '100.98.233.4:11434'
-  & $setupPath -CheckOllamaOnly
+  & $setupPath -CheckOllamaOnly -TextOnly
   if ($env:OLLAMA_HOST -ne 'http://100.98.233.4:11434') { throw 'Host normalization failed' }
   function global:curl.exe {
     $global:LASTEXITCODE = 7
     'synthetic connection refused'
   }
   try {
-    & $setupPath -CheckOllamaOnly
+    & $setupPath -CheckOllamaOnly -TextOnly
     throw 'Expected curl failure'
   } catch {
     if ($_.Exception.Message -notmatch 'codigo 7.*synthetic connection refused') { throw }
@@ -29,7 +29,7 @@ try {
     'invalid-json'
   }
   try {
-    & $setupPath -CheckOllamaOnly
+    & $setupPath -CheckOllamaOnly -TextOnly
     throw 'Expected parse failure'
   } catch {
     if ($_.Exception.Message -notmatch 'JSON') { throw }

@@ -1,4 +1,4 @@
-param([switch]$InstallPython, [switch]$CheckOllamaOnly)
+param([switch]$InstallPython, [switch]$CheckOllamaOnly, [switch]$TextOnly)
 $ErrorActionPreference = 'Stop'
 $address = if ($env:OLLAMA_HOST) { $env:OLLAMA_HOST.Trim() } else { '127.0.0.1:11434' }
 if ($address -notmatch '://') { $address = 'http://' + $address }
@@ -49,9 +49,20 @@ if (-not $python) {
 }
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) { throw 'Falta Ollama en PATH.' }
 $osInfo = Get-CimInstance Win32_OperatingSystem
-if ($osInfo.FreePhysicalMemory -lt 3GB / 1KB) { throw 'Menos de 3 GiB de RAM disponibles. Cierra otras aplicaciones y repite.' }
+$minimumRamGiB = if ($TextOnly) { 2 } else { 3 }
+$availableRamGiB = [math]::Round($osInfo.FreePhysicalMemory / 1MB, 2)
+Write-Host ('RAM disponible: ' + $availableRamGiB + ' GiB; minimo del ensayo: ' + $minimumRamGiB + ' GiB')
+if ($osInfo.FreePhysicalMemory -lt ($minimumRamGiB * 1GB / 1KB)) {
+  throw 'RAM disponible insuficiente. Cierra otras aplicaciones y repite; no es la RAM total instalada.'
+}
 $gpuInfo = & nvidia-smi --query-gpu=name,memory.total,memory.free,driver_version --format=csv
 if ($LASTEXITCODE -ne 0) { throw 'No se pudo consultar la GPU NVIDIA.' }
+if ($TextOnly) {
+  $gpuFree = & nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits
+  if ($LASTEXITCODE -ne 0 -or [int](@($gpuFree)[0]) -lt 3200) {
+    throw 'El ensayo de texto requiere al menos 3200 MiB de VRAM libres. Cierra cargas GPU y repite.'
+  }
+}
 $hardware = @{
   cpu = Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors
   ram_free_gib = [math]::Round($osInfo.FreePhysicalMemory / 1MB, 2)
@@ -64,13 +75,16 @@ if (-not (Test-Path $venvPython)) {
   & $python -m venv (Join-Path $trialDir 'venv')
   if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear el entorno aislado.' }
 }
-& $venvPython -m pip install --disable-pip-version-check 'piper-tts==1.8.0' 'onnxruntime==1.23.2'
-if ($LASTEXITCODE -ne 0) { throw 'No se pudieron instalar las dependencias de voz.' }
+if (-not $TextOnly) {
+  & $venvPython -m pip install --disable-pip-version-check 'piper-tts==1.8.0' 'onnxruntime==1.23.2'
+  if ($LASTEXITCODE -ne 0) { throw 'No se pudieron instalar las dependencias de voz.' }
+}
 $files = @(
-  @{ name = 'benchmark.py'; path = 'deploy/victus/benchmark.py'; sha = 'ec71a15fce50f4cb7d93f28cf8e4c604ccdbcd10f0fad854cfee5fb00208f9d9' },
+  @{ name = 'benchmark.py'; path = 'deploy/victus/benchmark.py'; sha = '04b273475f9b71a0d92cd2b07cd9fe3ab560a94a4e615b3e9d1529deafc543b7' },
   @{ name = 'benchmark-quality.py'; path = 'deploy/dell-ai/admin/benchmark-quality.py'; sha = '7eb8b775ada8ffbd84a20b6d16189e75482c383811d3648168cfc0d260ed86f4' },
   @{ name = 'speech-probe.py'; path = 'deploy/dell-ai/admin/speech-probe.py'; sha = '4a2448d90bd91c0431ba71d99b2097aff4859e2da88851f76923af926fe6bf56' }
 )
+if ($TextOnly) { $files = @($files | Where-Object { $_.name -ne 'speech-probe.py' }) }
 foreach ($file in $files) {
   $destination = Join-Path $trialDir $file.name
   $temporary = $destination + '.download'
@@ -81,6 +95,8 @@ foreach ($file in $files) {
   } finally { Remove-Item -Force -ErrorAction SilentlyContinue $temporary }
 }
 $env:PYTHONUTF8 = '1'
-& $venvPython (Join-Path $trialDir 'benchmark.py')
+$benchmarkArgs = @((Join-Path $trialDir 'benchmark.py'))
+if ($TextOnly) { $benchmarkArgs += '--text-only' }
+& $venvPython @benchmarkArgs
 if ($LASTEXITCODE -ne 0) { throw 'El ensayo no termino. Copia el error; no se modifica SUU.' }
-Write-Host ('Audios e informe en: ' + (Join-Path $trialDir 'data'))
+Write-Host ('Resultados del ensayo en: ' + (Join-Path $trialDir 'data'))

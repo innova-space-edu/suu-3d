@@ -70,3 +70,28 @@ que respondio en el Victus; informa codigo y detalle si falla, y valida el
 JSON de version. `-CheckOllamaOnly` permite verificar esa conexion sin instalar
 Python ni crear archivos. CI Windows prueba esta ruta con respuestas simuladas
 y analiza la sintaxis del script completo. No prueba GPU ni inferencia real.
+
+## Solo texto en Victus, Piper permanece en Dell
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File $setup -InstallPython -TextOnly
+```
+
+Volver a descargar setup antes de usar la opcion. Instala/reutiliza Python y
+un venv, pero no ejecuta pip ni descarga/carga voces, ONNX Runtime o simulador
+de audio. Solo descarga/verifica el GGUF 4B Q4 de 2,50 GB y el evaluador
+estandar de preguntas. No elimina dependencias de ensayos anteriores.
+
+El ensayo separado usa un minimo de 2 GiB de RAM libre, frente a 3 para el
+conjunto, junto con al menos 3200 MiB de VRAM disponible. Son margenes del
+ensayo, no una garantia de consumo maximo ni minima RAM universal. Cierra
+otras cargas antes de ejecutarlo. Tras el calentamiento, exige que Ollama
+reporte al menos 80% de `size` en `size_vram`; si no, conserva informe y se
+detiene sin continuar con el benchmark para evitar asumir aceleracion GPU.
+
+El informe imprime `loaded_models`, las 12 respuestas y `text_summary`,
+incluyendo aciertos exactos y medianas. Cada respuesta registra primer texto,
+primera frase de 35/60 caracteres, total, tokens/s y fin normal/truncado. No
+mide Piper ni permite concluir el tiempo hasta voz en SUU. Importa bajo alias
+temporal, lo elimina al terminar y deja el modelo de produccion intacto.
+La conexion Victus-Dell se realizara despues de revisar rendimiento y calidad.
