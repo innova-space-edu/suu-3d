@@ -53,3 +53,14 @@ Los hashes de voces corresponden a `rhasspy/piper-voices`, revision
 
 Validacion: pruebas Python con red/inferencia simulada. La instalacion PowerShell,
 CUDA, el rendimiento y reproduccion necesitan ejecutarse en el Victus real.
+
+## Ollama con direccion Tailscale
+
+El ensayo respeta `OLLAMA_HOST` tanto en PowerShell como en Python y en los
+comandos Ollama de importacion/limpieza. Si falta, usa 127.0.0.1:11434.
+Por ejemplo, `100.98.233.4:11434` se normaliza a HTTP y se muestra al inicio.
+Solo admite loopback o direcciones Tailscale IPv4 100.64.0.0/10, sin rutas
+ni credenciales. Las consultas a esa API evitan el proxy del sistema; las
+descargas HTTPS conservan su configuracion de proxy. No cambia `OLLAMA_HOST`
+persistente, el bind del servidor, firewall ni Tailscale.
+Al actualizar, volver a descargar setup.ps1: contiene el nuevo hash del benchmark.

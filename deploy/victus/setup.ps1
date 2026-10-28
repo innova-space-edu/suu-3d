@@ -16,8 +16,32 @@ if (-not $python) {
   if (-not $python) { throw 'No se encontro Python311. Abre otra consola y revisa la instalacion.' }
 }
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) { throw 'Falta Ollama en PATH.' }
-try { $null = Invoke-RestMethod 'http://127.0.0.1:11434/api/version' -TimeoutSec 5 }
-catch { throw 'Abre la aplicacion Ollama desde Inicio y repite esta prueba.' }
+$address = if ($env:OLLAMA_HOST) { $env:OLLAMA_HOST.Trim() } else { '127.0.0.1:11434' }
+if ($address -notmatch '://') { $address = 'http://' + $address }
+$uri = [uri]$address
+if ($uri.Scheme -ne 'http' -or $uri.UserInfo -or $uri.AbsolutePath -ne '/' -or $uri.Query -or $uri.Fragment) {
+  throw 'OLLAMA_HOST debe ser HTTP local o Tailscale sin ruta ni credenciales.'
+}
+if ($uri.Host -ne 'localhost') {
+  $ip = [System.Net.IPAddress]::Parse($uri.DnsSafeHost)
+  $bytes = $ip.GetAddressBytes()
+  $isTailscale = $bytes.Length -eq 4 -and $bytes[0] -eq 100 -and $bytes[1] -ge 64 -and $bytes[1] -le 127
+  if (-not [System.Net.IPAddress]::IsLoopback($ip) -and -not $isTailscale) { throw 'El ensayo solo admite loopback o IP Tailscale.' }
+}
+# An omitted port uses Ollama's default, including when a scheme was supplied.
+$port = 11434
+if ($address -match ':(\d+)/?$') { $port = [int]$Matches[1] }
+$hostText = if ($uri.DnsSafeHost.Contains(':')) { '[' + $uri.DnsSafeHost + ']' } else { $uri.DnsSafeHost }
+$base = 'http://' + $hostText + ':' + $port
+$env:OLLAMA_HOST = $base
+Write-Host ('API Ollama del ensayo: ' + $base)
+try {
+  $request = [System.Net.HttpWebRequest]::Create($base + '/api/version')
+  $request.Proxy = $null
+  $request.Timeout = 5000
+  $response = $request.GetResponse()
+  $response.Close()
+} catch { throw ('No responde Ollama en ' + $base + '. Comprueba esa direccion; no se modifica la configuracion permanente.') }
 $osInfo = Get-CimInstance Win32_OperatingSystem
 if ($osInfo.FreePhysicalMemory -lt 3GB / 1KB) { throw 'Menos de 3 GiB de RAM disponibles. Cierra otras aplicaciones y repite.' }
 $gpuInfo = & nvidia-smi --query-gpu=name,memory.total,memory.free,driver_version --format=csv
@@ -37,7 +61,7 @@ if (-not (Test-Path $venvPython)) {
 & $venvPython -m pip install --disable-pip-version-check 'piper-tts==1.8.0' 'onnxruntime==1.23.2'
 if ($LASTEXITCODE -ne 0) { throw 'No se pudieron instalar las dependencias de voz.' }
 $files = @(
-  @{ name = 'benchmark.py'; path = 'deploy/victus/benchmark.py'; sha = 'a18ca11bdeefc3017ee01405887093f0be73f4cf5d7d5ebba33639aa59eaf683' },
+  @{ name = 'benchmark.py'; path = 'deploy/victus/benchmark.py'; sha = 'ec71a15fce50f4cb7d93f28cf8e4c604ccdbcd10f0fad854cfee5fb00208f9d9' },
   @{ name = 'benchmark-quality.py'; path = 'deploy/dell-ai/admin/benchmark-quality.py'; sha = '7eb8b775ada8ffbd84a20b6d16189e75482c383811d3648168cfc0d260ed86f4' },
   @{ name = 'speech-probe.py'; path = 'deploy/dell-ai/admin/speech-probe.py'; sha = '4a2448d90bd91c0431ba71d99b2097aff4859e2da88851f76923af926fe6bf56' }
 )

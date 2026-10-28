@@ -4,6 +4,7 @@ No public server, credentials, Dell changes, or production activation.
 import hashlib
 import importlib.util
 import io
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import shutil
 import subprocess
 import time
 import urllib.request
+import urllib.parse
 import wave
 
 ROOT = Path(__file__).resolve().parent
@@ -66,11 +68,25 @@ def download(filename, url, size, sha):
         partial.unlink(missing_ok=True)
 
 
+def ollama_base():
+    raw = os.environ.get("OLLAMA_HOST", "127.0.0.1:11434").strip()
+    parsed = urllib.parse.urlsplit(raw if "://" in raw else "http://" + raw)
+    host = parsed.hostname
+    if parsed.scheme != "http" or parsed.username or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+        raise ValueError("OLLAMA_HOST debe ser HTTP local o Tailscale sin ruta ni credenciales")
+    if host != "localhost":
+        ip = ipaddress.ip_address(host)
+        if not ip.is_loopback and not (ip.version == 4 and ip in ipaddress.ip_network("100.64.0.0/10")):
+            raise ValueError("El ensayo solo admite loopback o IP Tailscale")
+    port = parsed.port or 11434
+    return "http://" + (f"[{host}]" if ":" in host else host) + f":{port}"
+
+
 def api(route, payload=None):
-    request = urllib.request.Request("http://127.0.0.1:11434" + route,
+    request = urllib.request.Request(ollama_base() + route,
         data=None if payload is None else json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"})
-    return urllib.request.urlopen(request, timeout=120)
+    return urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=120)
 
 
 def completion(alias, system, prompt, on_delta=None):
@@ -143,6 +159,8 @@ def main():
     DATA.mkdir(exist_ok=True)
     if shutil.disk_usage(DATA).free < 7 * 1024 ** 3:
         raise ValueError("Se requieren 7 GiB libres en disco para descarga, importación y margen")
+    os.environ["OLLAMA_HOST"] = ollama_base()  # CLI imports, inference and cleanup must use the same server.
+    print(json.dumps({"ollama_base": os.environ["OLLAMA_HOST"]}), flush=True)
     with api("/api/version") as response:
         version = json.load(response)
     with api("/api/ps") as response:
