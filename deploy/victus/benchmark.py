@@ -7,6 +7,7 @@ import importlib.util
 import io
 import ipaddress
 import json
+import math
 import os
 import re
 import statistics
@@ -174,6 +175,17 @@ def text_summary(rows):
             "note": "Coincidencia exacta incluye formato. Revisar respuestas abiertas; no mide voz ni red al Dell."}
 
 
+def gpu_allocation(models, alias):
+    loaded = next((item for item in models.get("models", [])
+                   if item.get("name", "").split(":")[0] == alias), {})
+    total, vram = loaded.get("size", 0), loaded.get("size_vram", 0)
+    if not all(isinstance(value, (int, float)) and math.isfinite(value) and value > 0 for value in (total, vram)):
+        raise ValueError("Ollama no confirma memoria GPU para el modelo del ensayo; revisar loaded_models")
+    return {"total_bytes": total, "vram_bytes": vram,
+            "vram_share_percent": round(100 * vram / total, 2), "partial": vram < total,
+            "note": "Proporcion de memoria reportada por Ollama; no porcentaje de capas ni garantia de velocidad"}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--text-only", action="store_true")
@@ -211,11 +223,8 @@ def main():
             report["loaded_models"] = json.load(response)
         print(json.dumps({"loaded_models": report["loaded_models"]}), flush=True)
         if args.text_only:
-            loaded = next((item for item in report["loaded_models"].get("models", [])
-                           if item.get("name", "").split(":")[0] == alias), {})
-            total, vram = loaded.get("size", 0), loaded.get("size_vram", 0)
-            if total <= 0 or vram / total < .8:
-                raise ValueError("El ensayo solo texto requiere al menos 80% de memoria del modelo en GPU segun Ollama; revisar loaded_models")
+            report["gpu_allocation"] = gpu_allocation(report["loaded_models"], alias)
+            print(json.dumps({"gpu_allocation": report["gpu_allocation"]}), flush=True)
         rows = []
         for case, prompt, expected in quality.CASES:
             row = {"case": case, **completion(alias, quality.SYSTEM, prompt)}

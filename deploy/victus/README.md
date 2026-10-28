@@ -85,9 +85,9 @@ estandar de preguntas. No elimina dependencias de ensayos anteriores.
 El ensayo separado usa un minimo de 2 GiB de RAM libre, frente a 3 para el
 conjunto, junto con al menos 3200 MiB de VRAM disponible. Son margenes del
 ensayo, no una garantia de consumo maximo ni minima RAM universal. Cierra
-otras cargas antes de ejecutarlo. Tras el calentamiento, exige que Ollama
-reporte al menos 80% de `size` en `size_vram`; si no, conserva informe y se
-detiene sin continuar con el benchmark para evitar asumir aceleracion GPU.
+otras cargas antes de ejecutarlo. Tras el calentamiento, exige memoria GPU positiva reportada para el modelo
+del ensayo. Acepta descarga parcial y mide sus tiempos; no impone un
+porcentaje minimo arbitrario para permitir la comparacion.
 
 El informe imprime `loaded_models`, las 12 respuestas y `text_summary`,
 incluyendo aciertos exactos y medianas. Cada respuesta registra primer texto,
@@ -95,3 +95,15 @@ primera frase de 35/60 caracteres, total, tokens/s y fin normal/truncado. No
 mide Piper ni permite concluir el tiempo hasta voz en SUU. Importa bajo alias
 temporal, lo elimina al terminar y deja el modelo de produccion intacto.
 La conexion Victus-Dell se realizara despues de revisar rendimiento y calidad.
+
+### Correccion del umbral de carga GPU
+
+El primer ensayo real completo de carga reporto `size=3232917093` y
+`size_vram=2333228400`, aproximadamente 72,17% de la memoria reportada en
+VRAM. Completo calentamiento, pero el filtro anterior de 80% impidio medir
+respuestas. Ese umbral se retiro: no demostraba por si mismo rendimiento.
+`gpu_allocation` registra bytes, proporcion y si la carga es parcial; no es
+porcentaje de capas ni garantiza velocidad. Se conservan los margenes de RAM
+y VRAM iniciales y el rechazo de CPU-only/no evidencia GPU. Se decide con
+calidad y tiempos observados, sin activar produccion automaticamente.
+El GGUF ya descargado se verifica y reutiliza; no se vuelve a descargar.

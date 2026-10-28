@@ -26,7 +26,7 @@ class VictusTests(unittest.TestCase):
                 elif requests.count("/api/ps") == 1:
                     value = {"models": []}
                 else:
-                    value = {"models": [{"name": "suu-victus-trial-123:latest", "size": 300, "size_vram": 300}]}
+                    value = {"models": [{"name": "suu-victus-trial-123:latest", "size": 3232917093, "size_vram": 2333228400}]}
                 return io.BytesIO(json.dumps(value).encode())
             result = {"answer": "9", "first_text_seconds": 1, "total_seconds": 2}
             with patch("sys.argv", ["benchmark.py", "--text-only"]), \
@@ -47,6 +47,18 @@ class VictusTests(unittest.TestCase):
             saved = json.loads((root / "data" / "report-123.json").read_text())
             self.assertEqual(saved["mode"], "text-only")
             self.assertNotIn("voices", saved)
+            self.assertAlmostEqual(saved["gpu_allocation"]["vram_share_percent"], 72.17, places=2)
+
+    def test_gpu_allocation_accepts_partial_gpu_but_rejects_cpu_only_and_missing_model(self):
+        data = {"models": [{"name": "trial:latest", "size": 100, "size_vram": 72}]}
+        self.assertTrue(victus.gpu_allocation(data, "trial")["partial"])
+        self.assertEqual(victus.gpu_allocation(data, "trial")["vram_share_percent"], 72)
+        for vram in (0, -1, float("nan")):
+            data["models"][0]["size_vram"] = vram
+            with self.assertRaises(ValueError):
+                victus.gpu_allocation(data, "trial")
+        with self.assertRaises(ValueError):
+            victus.gpu_allocation(data, "different-model")
 
     def test_text_only_download_set_excludes_all_voice_assets(self):
         self.assertEqual(victus.trial_files(True), [victus.FILES[0]])
