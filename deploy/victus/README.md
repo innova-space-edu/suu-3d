@@ -64,3 +64,9 @@ ni credenciales. Las consultas a esa API evitan el proxy del sistema; las
 descargas HTTPS conservan su configuracion de proxy. No cambia `OLLAMA_HOST`
 persistente, el bind del servidor, firewall ni Tailscale.
 Al actualizar, volver a descargar setup.ps1: contiene el nuevo hash del benchmark.
+
+La comprobacion inicial usa `curl.exe --noproxy "*"`, como la consulta manual
+que respondio en el Victus; informa codigo y detalle si falla, y valida el
+JSON de version. `-CheckOllamaOnly` permite verificar esa conexion sin instalar
+Python ni crear archivos. CI Windows prueba esta ruta con respuestas simuladas
+y analiza la sintaxis del script completo. No prueba GPU ni inferencia real.
