@@ -80,7 +80,7 @@ if (-not $TextOnly) {
   if ($LASTEXITCODE -ne 0) { throw 'No se pudieron instalar las dependencias de voz.' }
 }
 $files = @(
-  @{ name = 'benchmark.py'; path = 'deploy/victus/benchmark.py'; sha = '04b273475f9b71a0d92cd2b07cd9fe3ab560a94a4e615b3e9d1529deafc543b7' },
+  @{ name = 'benchmark.py'; path = 'deploy/victus/benchmark.py'; sha = '19a5c427c3ef7f48e2567df05422b45f236aa4ddfabda071178e3c497cb555fb' },
   @{ name = 'benchmark-quality.py'; path = 'deploy/dell-ai/admin/benchmark-quality.py'; sha = '7eb8b775ada8ffbd84a20b6d16189e75482c383811d3648168cfc0d260ed86f4' },
   @{ name = 'speech-probe.py'; path = 'deploy/dell-ai/admin/speech-probe.py'; sha = '4a2448d90bd91c0431ba71d99b2097aff4859e2da88851f76923af926fe6bf56' }
 )
