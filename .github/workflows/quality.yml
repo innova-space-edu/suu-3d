@@ -28,4 +28,6 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Check Victus PowerShell health path
         shell: powershell
-        run: .\deploy\victus\test_setup.ps1
+        run: |
+          .\deploy\victus\test_setup.ps1
+          .\deploy\victus\test_remote.ps1
