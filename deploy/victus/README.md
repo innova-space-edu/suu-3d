@@ -107,3 +107,30 @@ porcentaje de capas ni garantiza velocidad. Se conservan los margenes de RAM
 y VRAM iniciales y el rechazo de CPU-only/no evidencia GPU. Se decide con
 calidad y tiempos observados, sin activar produccion automaticamente.
 El GGUF ya descargado se verifica y reutiliza; no se vuelve a descargar.
+
+## Administracion Dell -> Victus por OpenSSH
+
+`enable-remote.ps1` se ejecuta una vez elevado en Windows, con DellIP,
+VictusIP, WindowsUser y PublicKey del propietario. Instala OpenSSH Server
+si falta, verifica IP local Tailscale y cuenta, limita autenticacion a esa
+cuenta/origen, instala una clave publica individual con ACL restringida y
+deja sshd automatico. No copia claves privadas al Victus. Usa publickey,
+sin password, y restringe la regla estandar de firewall al par Tailscale.
+Una configuracion SSH existente distinta de la plantilla oficial o de la
+gestionada por SUU se conserva y detiene la migracion. Hace respaldo previo
+de config/clave y direcciones de firewall; valida sshd_config antes de usarlo.
+
+La escucha es IPv4 general para arrancar sin esperar la interfaz Tailscale;
+el firewall aplica LocalAddress VictusIP y RemoteAddress DellIP y AllowUsers
+restringe cuenta/origen. No cambia reglas ajenas ni ACL de la tailnet, que
+tambien pueden impedir la conexion. Imprime la huella publica del anfitrion
+para verificarla en el primer acceso desde Dell; no deshabilitar esa revision.
+
+Este paso no configura aun Ollama como servicio, energia ni permisos MCP.
+SSH permite trabajar desde la terminal Dell; privilegios administrativos
+posteriores dependeran de la cuenta/Windows. No se deshabilita UAC ni se
+concede un permiso de ejecucion remota al MCP automaticamente.
+
+CI Windows analiza sintaxis y renderiza configuracion sin instalar servicios,
+con pruebas de direcciones y claves invalidas. Instalacion real, permisos,
+conexion y arranque se verifican en los equipos del propietario.
