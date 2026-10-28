@@ -134,3 +134,16 @@ concede un permiso de ejecucion remota al MCP automaticamente.
 CI Windows analiza sintaxis y renderiza configuracion sin instalar servicios,
 con pruebas de direcciones y claves invalidas. Instalacion real, permisos,
 conexion y arranque se verifican en los equipos del propietario.
+
+### Instalacion desde otra cuenta administradora
+
+Si Tailscale esta asociado a la sesion interactiva `34`, otra cuenta elevada
+puede recibir `401 Unauthorized` al consultar su CLI. El bootstrap verifica
+la IP mediante `Get-NetIPAddress` y exige interfaz Tailscale local, sin
+consultar, cerrar sesion ni reconfigurar el cliente Tailscale.
+La cuenta de acceso se resuelve con Get-LocalUser y se imprime su SID.
+Carpeta/clave publica/configuracion se asignan al grupo Administradores por
+SID, manteniendo lectura para la cuenta elegida y control para SYSTEM.
+Las claves privadas del anfitrion creadas por el bootstrap reciben ACL
+Administradores/SYSTEM; las preexistentes se conservan. Esto permite instalar
+como PROVIDENCIA y autenticar como la cuenta local 34 sin confundir perfiles.

@@ -6,6 +6,13 @@ param(
   [switch]$RenderOnly
 )
 $ErrorActionPreference = 'Stop'
+function Assert-VictusInterface {
+  param([string]$ExpectedIP)
+  $matching = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+    Where-Object { $_.IPAddress -eq $ExpectedIP -and $_.InterfaceAlias -like '*Tailscale*' })
+  if ($matching.Count -eq 0) { throw 'La IP VictusIP no esta en una interfaz Tailscale local. Se conserva la configuracion.' }
+}
+
 foreach ($address in @($DellIP,$VictusIP)) {
   $ip = [System.Net.IPAddress]::Parse($address)
   $bytes = $ip.GetAddressBytes()
@@ -37,8 +44,9 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 $user = Get-LocalUser -Name $WindowsUser -ErrorAction Stop
 if (-not $user.Enabled) { throw 'La cuenta de Windows esta deshabilitada.' }
-$actualIP = (& tailscale ip -4 | Select-Object -First 1).Trim()
-if ($LASTEXITCODE -ne 0 -or $actualIP -ne $VictusIP) { throw 'La IP Tailscale de este equipo no coincide con VictusIP.' }
+Assert-VictusInterface -ExpectedIP $VictusIP
+Write-Host ('Cuenta local autorizada: ' + $user.Name + '; SID: ' + $user.SID.Value)
+Write-Host ('Interfaz Tailscale local verificada: ' + $VictusIP)
 # Refuse to replace an unrelated custom SSH deployment.
 $configFile = Join-Path $sshDir 'sshd_config'
 $defaultFile = Join-Path $env:WINDIR 'System32\OpenSSH\sshd_config_default'
@@ -57,6 +65,8 @@ if ($capability.State -ne 'Installed') {
 New-Item -ItemType Directory -Force -Path $sshDir,$managedDir | Out-Null
 & icacls.exe $managedDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' ('*' + $user.SID.Value + ':(OI)(CI)RX') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'No se pudieron configurar permisos de la carpeta SSH SUU.' }
+& icacls.exe $managedDir /setowner '*S-1-5-32-544' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'No se pudo establecer propietario Administradores en la carpeta SSH SUU.' }
 $backupDir = Join-Path $managedDir ('backup-' + [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfff'))
 New-Item -ItemType Directory -Path $backupDir | Out-Null
 if (Test-Path $configFile) { Copy-Item $configFile (Join-Path $backupDir 'sshd_config') }
@@ -64,16 +74,31 @@ if (Test-Path $keyFile) { Copy-Item $keyFile (Join-Path $backupDir 'authorized_k
 [IO.File]::WriteAllText($keyFile, $PublicKey.Trim() + "`n", [Text.Encoding]::ASCII)
 & icacls.exe $keyFile /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' ('*' + $user.SID.Value + ':R') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'No se pudieron configurar permisos de la clave publica.' }
+& icacls.exe $keyFile /setowner '*S-1-5-32-544' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'No se pudo establecer propietario Administradores en la clave publica.' }
 $sshd = Join-Path $env:WINDIR 'System32\OpenSSH\sshd.exe'
 $keygen = Join-Path $env:WINDIR 'System32\OpenSSH\ssh-keygen.exe'
+$existingHostKeys = @(Get-ChildItem $sshDir -Filter 'ssh_host_*_key' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
 & $keygen -A
 if ($LASTEXITCODE -ne 0) { throw 'No se pudieron preparar las claves del anfitrion.' }
+# Newly generated private host keys belong to the service administrators,
+# not to whichever administrator performed this bootstrap.
+foreach ($hostKey in @(Get-ChildItem $sshDir -Filter 'ssh_host_*_key')) {
+  if ($existingHostKeys -notcontains $hostKey.FullName) {
+    & icacls.exe $hostKey.FullName /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'No se pudieron restringir permisos de una clave nueva del anfitrion.' }
+    & icacls.exe $hostKey.FullName /setowner '*S-1-5-32-544' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'No se pudo establecer propietario de una clave nueva del anfitrion.' }
+  }
+}
 $candidateFile = Join-Path $sshDir 'sshd_config.suu-candidate'
 [IO.File]::WriteAllText($candidateFile, $configText + "`n", [Text.Encoding]::ASCII)
 try {
   & $sshd -t -f $candidateFile
   if ($LASTEXITCODE -ne 0) { throw 'OpenSSH rechazo la configuracion candidata. No se reemplazo sshd_config.' }
   Copy-Item $candidateFile $configFile -Force
+  & icacls.exe $configFile /setowner '*S-1-5-32-544' | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'No se pudo establecer propietario de sshd_config.' }
 } finally { Remove-Item $candidateFile -ErrorAction SilentlyContinue }
 # Scope the standard OpenSSH rule to the private Dell instead of opening to LAN/public.
 $ruleName = 'OpenSSH-Server-In-TCP'
