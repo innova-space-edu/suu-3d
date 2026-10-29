@@ -76,3 +76,5 @@ unset KEY
 Para comparar y activar Qwen3-4B-Instruct-2507 Q5_K_M conservando el perfil actual,
 consultar [MODEL_TRIAL.md](MODEL_TRIAL.md). El ensayo valida recursos e integridad,
 usa un puerto temporal y separa la comparación de la activación en producción.
+
+Para usar el 4B del Victus conservando la puerta Dell y Piper, ver [el instalador del puente](../dell-victus/README.md). No cambia la instalacion al actualizar el repositorio.
