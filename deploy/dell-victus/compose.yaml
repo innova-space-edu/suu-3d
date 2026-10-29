@@ -1,0 +1,23 @@
+# SUU managed Victus relay v1
+services:
+  suu-llm:
+    container_name: suu-llm
+    image: __IMAGE__
+    restart: unless-stopped
+    init: true
+    user: "${SUU_RUN_UID:?}:${SUU_RUN_GID:?}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: "0.5"
+    mem_limit: 384m
+    pids_limit: 80
+    ports: ["127.0.0.1:8094:8080"]
+    volumes: ["./secrets/suu_api_key.txt:/run/secrets/suu_api_key:ro"]
+    environment:
+      SUU_VICTUS_URL: __VICTUS_URL__
+      SUU_VICTUS_MODEL: suu-victus-4b-q4
+    networks: [portal_default]
+networks:
+  portal_default:
+    external: true
