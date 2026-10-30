@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 const compile=path=>ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-const {FairFlow,FairMotion,FairRecording,calibrateFair,validCalibration}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-flow.ts')).toString('base64'));
+const {FairFlow,FairMotion,FairRecording,validFairExamples,calibrateFair,validCalibration}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-flow.ts')).toString('base64'));
 test('a crowd gets one complete welcome; continuing traffic repeats only after completion and a gap',()=>{
  const flow=new FairFlow();flow.observe(0,true,true);assert.equal(flow.poll(0,true),'welcome');
  for(let now=250;now<=12000;now+=250){flow.observe(now,true,true);assert.equal(flow.poll(now,true),null)}
@@ -90,4 +90,17 @@ test('recording rejects absent people and crowded recordings',()=>{
  const empty=new FairRecording();for(let i=0;i<24;i++)empty.add([]);assert.throws(()=>empty.finish(),/suficiente/);
  const crowd=new FairRecording();for(let i=0;i<8;i++)crowd.add([box(.2)]);
  for(let i=0;i<8;i++)crowd.add([box(.2),box(.7)]);assert.throws(()=>crowd.finish(),/varias/);
+});
+
+test('calibration keeps a short exit after a long stationary lead-in',()=>{
+ const exit=[...Array.from({length:35},()=>({x:.8,y:.5,size:.3})),...walk(.8,.2).slice(0)];
+ // Most of the recording is waiting, but the final crossing is clear.
+ const c=calibrateFair(walk(.2,.8),exit);assert.equal(c.axis,'x');assert.equal(c.direction,1);assert.ok(validCalibration(c));
+});
+test('saved route drafts retain a single route and reject malformed or oversized coordinates',()=>{
+ const partial={entry:walk(.2,.8),exit:[]};assert.ok(validFairExamples(JSON.parse(JSON.stringify(partial))));
+ assert.equal(validFairExamples({entry:[{x:NaN,y:.5,size:.2}],exit:[]}),false);
+ assert.equal(validFairExamples({entry:[{x:1.2,y:.5,size:.2}],exit:[]}),false);
+ assert.equal(validFairExamples({entry:Array(121).fill({x:.5,y:.5,size:.2}),exit:[]}),false);
+ assert.equal(validFairExamples({entry:[],exit:'missing'}),false);
 });

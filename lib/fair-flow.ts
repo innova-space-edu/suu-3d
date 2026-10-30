@@ -47,7 +47,16 @@ export class FairRecording {
 export type FairCalibration = {version:1;axis:keyof MotionSample;direction:1|-1;low:number;high:number};
 export function sampleBox(b: PersonBox): MotionSample {return {x:b.x+b.width/2,y:b.y+b.height/2,size:Math.sqrt(b.width*b.height)};}
 const median = (xs:number[]) => {const a=[...xs].sort((a,b)=>a-b);return a[Math.floor(a.length/2)] ?? 0;};
-function ends(samples:MotionSample[],axis:keyof MotionSample){const n=Math.max(2,Math.floor(samples.length/3));return [median(samples.slice(0,n).map(s=>s[axis])),median(samples.slice(-n).map(s=>s[axis]))];}
+// Use short endpoint windows: waiting still must not dilute a brief crossing.
+function ends(samples:MotionSample[],axis:keyof MotionSample){const n=2;return [median(samples.slice(0,n).map(s=>s[axis])),median(samples.slice(-n).map(s=>s[axis]))];}
+export type FairExamples={entry:MotionSample[];exit:MotionSample[]};
+export function validFairExamples(value:unknown):value is FairExamples {
+ if(!value||typeof value!=="object")return false;
+ return (["entry","exit"] as const).every(kind=>{
+  const rows=(value as FairExamples)[kind];
+  return Array.isArray(rows)&&rows.length<=120&&rows.every(s=>s&&[s.x,s.y,s.size].every(v=>typeof v==="number"&&Number.isFinite(v)&&v>=0&&v<=1));
+ });
+}
 export function calibrateFair(entry:MotionSample[],exit:MotionSample[]):FairCalibration {
   if(entry.length<6||exit.length<6)throw new Error("Camina por el paso con una sola persona visible durante al menos dos segundos.");
   const candidates=(["x","y","size"] as const).map(axis=>{
