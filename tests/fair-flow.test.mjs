@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 const compile=path=>ts.transpileModule(readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-const {FairFlow,FairMotion,calibrateFair,validCalibration}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-flow.ts')).toString('base64'));
+const {FairFlow,FairMotion,FairRecording,calibrateFair,validCalibration}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-flow.ts')).toString('base64'));
 test('a crowd gets one complete welcome; continuing traffic repeats only after completion and a gap',()=>{
  const flow=new FairFlow();flow.observe(0,true,true);assert.equal(flow.poll(0,true),'welcome');
  for(let now=250;now<=12000;now+=250){flow.observe(now,true,true);assert.equal(flow.poll(now,true),null)}
@@ -77,4 +77,17 @@ test('prepared fair answers handle paraphrases and contextual follow-ups without
  assert.match(answer([{role:'user',content:'Consumo de drogas'},{role:'assistant',content:ask('Consumo de drogas')},{role:'user',content:'¿Quién lo hizo?'}]),/No tengo la autoría/);
  assert.equal(ask('Explícame la física cuántica'),null);
  assert.match(ask('¿Qué trabajos de robótica hay?'),/No tengo una ficha/);
+});
+
+test('recording accepts a brief crossing with empty frames before and after',()=>{
+ const run=new FairRecording();for(let i=0;i<12;i++)run.add([]);
+ for(let i=0;i<8;i++)run.add([box(.1+i*.07)]);
+ for(let i=0;i<12;i++)run.add([]);
+ const entry=run.finish();assert.equal(entry.length,8);
+ assert.ok(validCalibration(calibrateFair(entry,[...entry].reverse())));
+});
+test('recording rejects absent people and crowded recordings',()=>{
+ const empty=new FairRecording();for(let i=0;i<24;i++)empty.add([]);assert.throws(()=>empty.finish(),/suficiente/);
+ const crowd=new FairRecording();for(let i=0;i<8;i++)crowd.add([box(.2)]);
+ for(let i=0;i<8;i++)crowd.add([box(.2),box(.7)]);assert.throws(()=>crowd.finish(),/varias/);
 });

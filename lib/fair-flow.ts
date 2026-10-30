@@ -31,12 +31,25 @@ export class FairFlow {
 
 export type PersonBox = {x:number;y:number;width:number;height:number};
 export type MotionSample = {x:number;y:number;size:number};
+export class FairRecording {
+  samples:MotionSample[]=[];
+  multiple=0;
+  add(boxes:PersonBox[]){
+    if(boxes.length===1)this.samples.push(sampleBox(boxes[0]));
+    else if(boxes.length>1)this.multiple++;
+  }
+  finish(){
+    if(this.samples.length<6)throw new Error("No se captó suficiente recorrido. Comprueba que el recuadro siga a una persona y camina de un lado al otro.");
+    if(this.multiple>(this.samples.length+this.multiple)*.3)throw new Error("Aparecieron varias personas. Repite este recorrido con una sola persona visible.");
+    return this.samples;
+  }
+}
 export type FairCalibration = {version:1;axis:keyof MotionSample;direction:1|-1;low:number;high:number};
 export function sampleBox(b: PersonBox): MotionSample {return {x:b.x+b.width/2,y:b.y+b.height/2,size:Math.sqrt(b.width*b.height)};}
 const median = (xs:number[]) => {const a=[...xs].sort((a,b)=>a-b);return a[Math.floor(a.length/2)] ?? 0;};
 function ends(samples:MotionSample[],axis:keyof MotionSample){const n=Math.max(2,Math.floor(samples.length/3));return [median(samples.slice(0,n).map(s=>s[axis])),median(samples.slice(-n).map(s=>s[axis]))];}
 export function calibrateFair(entry:MotionSample[],exit:MotionSample[]):FairCalibration {
-  if(entry.length<10||exit.length<10)throw new Error("Camina durante toda la prueba, con una sola persona visible.");
+  if(entry.length<6||exit.length<6)throw new Error("Camina por el paso con una sola persona visible durante al menos dos segundos.");
   const candidates=(["x","y","size"] as const).map(axis=>{
     const [a,b]=ends(entry,axis),[c,d]=ends(exit,axis);
     return {axis,a,b,c,d,score:(b-a)*(d-c)<0?Math.min(Math.abs(b-a),Math.abs(d-c)):0};
