@@ -93,7 +93,7 @@ test('recording rejects absent people and crowded recordings',()=>{
 });
 
 test('calibration keeps a short exit after a long stationary lead-in',()=>{
- const exit=[...Array.from({length:35},()=>({x:.8,y:.5,size:.3})),...walk(.8,.2).slice(0)];
+ const exit=[...Array.from({length:35},()=>({x:.8,y:.5,size:.3})),...Array.from({length:6},(_,i)=>({x:.8-.6*i/5,y:.5,size:.3}))];
  // Most of the recording is waiting, but the final crossing is clear.
  const c=calibrateFair(walk(.2,.8),exit);assert.equal(c.axis,'x');assert.equal(c.direction,1);assert.ok(validCalibration(c));
 });
