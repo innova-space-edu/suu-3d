@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState} from "react";
 import SuuVoiceMode,{type FairVoiceCommand} from "./SuuVoiceMode";
 import {useFairCamera} from "@/hooks/useFairCamera";
-import {calibrateFair,FAIR_SCRIPTS,FairFlow,sampleBox,validCalibration,type FairCalibration,type FairAnnouncement,type MotionSample} from "@/lib/fair-flow";
+import {calibrateFair,FAIR_SCRIPTS,FairFlow,FairRecording,validCalibration,type FairCalibration,type FairAnnouncement,type MotionSample} from "@/lib/fair-flow";
 import type {ChatMessage} from "@/lib/providers";
 
 type Props={ttsLocal?:boolean;sttAvailable?:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];voiceId:string;language:string;quality:"eco"|"high";solid:boolean;noiseReduction:boolean};
@@ -31,12 +31,13 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
  const introDialog=useRef<HTMLDialogElement|null>(null);
  useEffect(()=>{if(intro){introDialog.current?.showModal()}},[intro]);
  const canvas=useRef<HTMLCanvasElement|null>(null),flow=useRef(new FairFlow()),isActive=useRef(false),availableRef=useRef(false),serial=useRef(0),busySince=useRef(0);
- const trial=useRef<{kind:"entry"|"exit";samples:MotionSample[];frames:number;ambiguous:number}|null>(null),examples=useRef<{entry:MotionSample[];exit:MotionSample[]}>({entry:[],exit:[]}),timeout=useRef<ReturnType<typeof setTimeout>|null>(null);
+ const [captured,setCaptured]=useState(0),[learned,setLearned]=useState({entry:false,exit:false});
+ const trial=useRef<FairRecording|null>(null),examples=useRef<{entry:MotionSample[];exit:MotionSample[]}>({entry:[],exit:[]}),timeout=useRef<ReturnType<typeof setTimeout>|null>(null);
  isActive.current=active;
  const camera=useFairCamera((boxes,now,movement)=>{
   const ctx=canvas.current?.getContext("2d");
   if(ctx&&camera.video.current){ctx.drawImage(camera.video.current,0,0,320,240);ctx.strokeStyle="#7effce";ctx.lineWidth=2;for(const b of boxes)ctx.strokeRect(b.x*320,b.y*240,b.width*320,b.height*240)}
-  if(trial.current){trial.current.frames++;if(boxes.length===1)trial.current.samples.push(sampleBox(boxes[0]));else trial.current.ambiguous++}
+  if(trial.current){trial.current.add(boxes);setCaptured(trial.current.samples.length)}
   setActivity(movement.entering?"Entrada detectada (prioridad)":movement.leaving?"Salida detectada":boxes.length?"Personas visibles, sin recorrido claro":"Sin movimiento");
   if(calibration&&!trial.current&&!isActive.current)setTested(t=>{const entry=t.entry||movement.entering,exit=t.exit||(!movement.entering&&movement.leaving);return entry===t.entry&&exit===t.exit?t:{entry,exit}});
   if(isActive.current)flow.current.observe(now,movement.entering,movement.leaving);
@@ -58,16 +59,15 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
  const close=()=>{pause();camera.stop();props.onClose()};
  const learn=(kind:"entry"|"exit")=>{
   if(timeout.current)clearTimeout(timeout.current);pause();setReuse(false);setCalibration(null);try{localStorage.removeItem(STORAGE)}catch{}setTested({entry:false,exit:false});setRecording(kind);
-  trial.current={kind,samples:[],frames:0,ambiguous:0};setNotice("Camina por el paso durante 6 segundos. Solo una persona debe aparecer en esta prueba.");
+  trial.current=new FairRecording();setCaptured(0);setNotice("Camina por el paso durante 6 segundos. Solo una persona debe aparecer en esta prueba.");
   timeout.current=setTimeout(()=>{
    const run=trial.current;trial.current=null;setRecording(null);if(!run)return;
-   if(run.samples.length<10||run.ambiguous>run.frames*.3){setNotice("No se pudo seguir una sola persona durante la prueba. Repite este recorrido.");return}
-   examples.current[kind]=run.samples;
+   try{examples.current[kind]=run.finish();setLearned(v=>({...v,[kind]:true}))}catch(e){setNotice(e instanceof Error?e.message:"Repite este recorrido.");return}
    if(!examples.current.entry.length||!examples.current.exit.length){setNotice("Recorrido guardado temporalmente. Ahora enseña el otro recorrido.");return}
    try{const c=calibrateFair(examples.current.entry,examples.current.exit);setCalibration(c);try{localStorage.setItem(STORAGE,JSON.stringify(c))}catch{}setNotice("Calibración lista. Haz una entrada y una salida de prueba sin voz para habilitar el modo automático.")}catch(e){setNotice(e instanceof Error?e.message:"Repite las pruebas.")}
   },6000);
  };
- const chooseSetup=(keep:boolean)=>{setReuse(keep);setIntro(false);setOpen(true);if(keep){setNotice("Usando los recorridos guardados. Activa la cámara y después la feria con audio. Si cambiaste la posición, enseña los recorridos de nuevo.")}else{setCalibration(null);setTested({entry:false,exit:false});examples.current={entry:[],exit:[]};try{localStorage.removeItem(STORAGE)}catch{}setNotice("Activa la cámara, enseña entrada y salida y comprueba ambos recorridos sin voz.")}};
+ const chooseSetup=(keep:boolean)=>{setReuse(keep);setIntro(false);setOpen(true);if(keep){setNotice("Usando los recorridos guardados. Activa la cámara y después la feria con audio. Si cambiaste la posición, enseña los recorridos de nuevo.")}else{setCalibration(null);setTested({entry:false,exit:false});examples.current={entry:[],exit:[]};setLearned({entry:false,exit:false});try{localStorage.removeItem(STORAGE)}catch{}setNotice("Activa la cámara, enseña entrada y salida y comprueba ambos recorridos sin voz.")}};
  const activate=()=>{flow.current=new FairFlow();setCommand(null);busySince.current=0;setActive(true);setOpen(false);setNotice("Feria activa. Un saludo completo por vez; las entradas tienen prioridad.")};
  return <div className="fairMode">
   {intro&&<dialog ref={introDialog} className="fairIntro" aria-labelledby="fairIntroTitle" onCancel={e=>{e.preventDefault();close()}}>
@@ -88,10 +88,10 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
     <canvas ref={canvas} width={320} height={240} aria-label="Vista de cámara para configurar recorridos"/>
     <p>{camera.status==="ready"?activity:camera.status==="loading"?"Cargando detector de personas…":"Cámara apagada"}</p>
     {camera.error&&<p role="alert">{camera.error}</p>}
-    <div className="fairButtons"><button disabled={camera.status==="loading"||active} onClick={()=>{setTested({entry:false,exit:false});examples.current={entry:[],exit:[]};void camera.start()}}>1. Activar cámara de prueba</button>
+    <div className="fairButtons"><button disabled={camera.status==="loading"||active||Boolean(recording)||camera.status==="ready"} onClick={()=>{setTested({entry:false,exit:false});examples.current={entry:[],exit:[]};setLearned({entry:false,exit:false});void camera.start()}}>1. Activar cámara de prueba</button>
     <button disabled={camera.status!=="ready"||Boolean(recording)||active} onClick={()=>learn("entry")}>{recording==="entry"?"Aprendiendo entrada…":"2. Enseñar entrada (6 s)"}</button>
     <button disabled={camera.status!=="ready"||Boolean(recording)||active} onClick={()=>learn("exit")}>{recording==="exit"?"Aprendiendo salida…":"3. Enseñar salida (6 s)"}</button></div>
-    <p>{reuse&&calibration?"Configuración guardada seleccionada. Puedes activarla sin enseñar de nuevo; usa los botones de entrada y salida si cambiaste el lugar.":<> {calibration?"Calibración disponible. Prueba sin voz:":"Aún falta calibrar."} Entrada {tested.entry?"✓":"pendiente"} · salida {tested.exit?"✓":"pendiente"}.</>}</p>
+    <p>{reuse&&calibration?"Configuración guardada seleccionada. Puedes activarla sin enseñar de nuevo; usa los botones de entrada y salida si cambiaste el lugar.":<> {recording?`Grabando ${recording==="entry"?"entrada":"salida"}: ${captured} muestras captadas.`:calibration?"Calibración disponible. Prueba sin voz:":`Recorridos: entrada ${learned.entry?"guardada":"pendiente"} · salida ${learned.exit?"guardada":"pendiente"}.`} Entrada {tested.entry?"✓":"pendiente"} · salida {tested.exit?"✓":"pendiente"}.</>}</p>
     <button disabled={active||camera.status!=="ready"||!calibration||(!reuse&&(!tested.entry||!tested.exit))||Boolean(recording)} onClick={activate}>4. Activar feria con audio</button>
     <div className="fairButtons"><button disabled={!active||!available} onClick={()=>announce("welcome")}>Dar bienvenida</button><button disabled={!active||!available||activity.startsWith("Entrada")} onClick={()=>announce("goodbye")}>Despedir</button></div>
     <small>El análisis de personas ocurre en este equipo. Solo se guarda la calibración, sin imágenes ni identidad. La dirección se estima por el recorrido; una espalda por sí sola no confirma una salida. No es un contador de asistencia.</small>
