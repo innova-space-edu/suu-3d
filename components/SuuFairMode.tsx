@@ -80,7 +80,7 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
    <h2 id="fairIntroTitle">Antes de comenzar la feria</h2>
    <ol><li>Coloca la cámara en el acceso y déjala fija.</li><li>Activa la cámara. Si es un lugar nuevo, enseña una entrada y una salida con hasta 12 segundos cada una.</li><li>Activa la feria con audio cuando la calibración esté lista. La comprobación sin voz es opcional.</li></ol>
    <p>SUU termina un saludo completo antes de repetirlo. Las entradas tienen prioridad sobre las despedidas.</p>
-   {loaded?(calibration?<><p><strong>Hay una configuración guardada en este navegador.</strong> ¿La cámara sigue en el mismo lugar o quieres enseñar los recorridos de nuevo?</p><div className="fairIntroActions"><button autoFocus onClick={()=>chooseSetup(true)}>Usar configuración guardada</button><button onClick={()=>chooseSetup(false)}>Enseñar recorridos de nuevo</button></div></>:<><button autoFocus onClick={()=>{setIntro(false);setOpen(true);setNotice("Activa la cámara y completa el recorrido pendiente. El otro se conserva.")}}>{learned.entry||learned.exit?"Continuar recorridos guardados":"Comenzar configuración"}</button>{(learned.entry||learned.exit)&&<button onClick={()=>chooseSetup(false)}>Borrar recorridos y comenzar de nuevo</button>}</>):<p>Cargando configuración…</p>}
+   {loaded?(calibration?<><p><strong>Hay una configuración guardada en este navegador.</strong> Ya configuraste la entrada y la salida. Puedes usar la misma configuración o crear una nueva. Usa la guardada si la cámara sigue en la misma posición y orientación.</p><div className="fairIntroActions"><button autoFocus onClick={()=>chooseSetup(true)}>Usar configuración guardada</button><button onClick={()=>chooseSetup(false)}>Crear nueva configuración</button></div></>:<><button autoFocus onClick={()=>{setIntro(false);setOpen(true);setNotice("Activa la cámara y completa el recorrido pendiente. El otro se conserva.")}}>{learned.entry||learned.exit?"Continuar recorridos guardados":"Comenzar configuración"}</button>{(learned.entry||learned.exit)&&<button onClick={()=>chooseSetup(false)}>Borrar recorridos y comenzar de nuevo</button>}</>):<p>Cargando configuración…</p>}
    <button className="fairIntroClose" onClick={onChangeMode}>Elegir otro modo</button>
    <button className="fairIntroClose" onClick={close}>Salir del modo feria</button>
   </dialog>}
@@ -90,7 +90,7 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
    <p role="status">{notice}</p>
    {active&&<><small>{activity}</small><button onClick={()=>{pause();camera.stop();setOpen(true);setNotice("Feria detenida. Cámara y micrófono apagados.")}}>Detener feria y dispositivos</button></>}
    {open&&<>
-    <p>Preparación: enseña una entrada y una salida con la cámara fija. La prueba sin voz es opcional. Si mueves la cámara, vuelve a calibrar.</p>
+    <p>Si ya configuraste entrada y salida, puedes usar la configuración guardada al abrir este modo o crear una nueva. Se guarda en este navegador. Preparación: enseña una entrada y una salida con la cámara fija. La prueba sin voz es opcional. Si mueves la cámara, vuelve a calibrar.</p>
     <canvas ref={canvas} width={320} height={240} aria-label="Vista de cámara para configurar recorridos"/>
     <p>{camera.status==="ready"?activity:camera.status==="loading"?"Cargando detector de personas…":"Cámara apagada"}</p>
     {camera.error&&<p role="alert">{camera.error}</p>}
