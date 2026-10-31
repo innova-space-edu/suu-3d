@@ -65,7 +65,7 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
   try{const samples=run.finish();examples.current={...examples.current,[kind]:samples};setLearned(v=>({...v,[kind]:true}));try{localStorage.setItem(DRAFT,JSON.stringify(examples.current))}catch{setNotice("El navegador no permitió guardar los recorridos; se conservarán mientras no cierres esta ventana.")}}
   catch(e){setNotice((e instanceof Error?e.message:"Repite este recorrido.")+" El otro recorrido se conserva.");return}
   if(!examples.current.entry.length||!examples.current.exit.length){setNotice(`${kind==="entry"?"Entrada":"Salida"} captada. Ahora enseña el otro recorrido; este se conserva.`);return}
-  try{const c=calibrateFair(examples.current.entry,examples.current.exit);setCalibration(c);try{localStorage.setItem(STORAGE,JSON.stringify(c))}catch{}setNotice("Entrada y salida captadas. Calibración lista: comprueba ambos recorridos sin voz.")}
+  try{const c=calibrateFair(examples.current.entry,examples.current.exit);setCalibration(c);try{localStorage.setItem(STORAGE,JSON.stringify(c))}catch{}setNotice("Entrada y salida captadas. Calibración lista: ya puedes activar la feria con audio. La prueba sin voz es opcional.")}
   catch(e){setNotice((e instanceof Error?e.message:"Repite el recorrido.")+" Ambos recorridos están captados. Repite solo el que quieras corregir, sin reiniciar la cámara.")}
  };
  const learn=(kind:"entry"|"exit")=>{
@@ -73,12 +73,12 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
   trial.current=new FairRecording();setCaptured(0);setNotice("Tienes hasta 12 segundos. Cruza una sola vez y pulsa Finalizar recorrido antes de volver al punto inicial.");
   timeout.current=setTimeout(()=>finishRecording(kind),12000);
  };
- const chooseSetup=(keep:boolean)=>{setReuse(keep);setIntro(false);setOpen(true);if(keep){setNotice("Usando los recorridos guardados. Activa la cámara y después la feria con audio. Si cambiaste la posición, enseña los recorridos de nuevo.")}else{setCalibration(null);setTested({entry:false,exit:false});examples.current={entry:[],exit:[]};setLearned({entry:false,exit:false});try{localStorage.removeItem(STORAGE);localStorage.removeItem(DRAFT)}catch{}setNotice("Activa la cámara, enseña entrada y salida y comprueba ambos recorridos sin voz.")}};
+ const chooseSetup=(keep:boolean)=>{setReuse(keep);setIntro(false);setOpen(true);if(keep){setNotice("Usando los recorridos guardados. Activa la cámara y después la feria con audio. Si cambiaste la posición, enseña los recorridos de nuevo.")}else{setCalibration(null);setTested({entry:false,exit:false});examples.current={entry:[],exit:[]};setLearned({entry:false,exit:false});try{localStorage.removeItem(STORAGE);localStorage.removeItem(DRAFT)}catch{}setNotice("Activa la cámara, enseña entrada y salida y activa la feria. Puedes comprobar los recorridos sin voz si lo deseas.")}};
  const activate=()=>{flow.current=new FairFlow();setCommand(null);busySince.current=0;setActive(true);setOpen(false);setNotice("Feria activa. Un saludo completo por vez; las entradas tienen prioridad.")};
  return <div className="fairMode">
   {intro&&<dialog ref={introDialog} className="fairIntro" aria-labelledby="fairIntroTitle" onCancel={e=>{e.preventDefault();close()}}>
    <h2 id="fairIntroTitle">Antes de comenzar la feria</h2>
-   <ol><li>Coloca la cámara en el acceso y déjala fija.</li><li>Activa la cámara. Si es un lugar nuevo, enseña una entrada y una salida con hasta 12 segundos cada una.</li><li>Comprueba los recorridos sin voz y activa la feria con audio.</li></ol>
+   <ol><li>Coloca la cámara en el acceso y déjala fija.</li><li>Activa la cámara. Si es un lugar nuevo, enseña una entrada y una salida con hasta 12 segundos cada una.</li><li>Activa la feria con audio cuando la calibración esté lista. La comprobación sin voz es opcional.</li></ol>
    <p>SUU termina un saludo completo antes de repetirlo. Las entradas tienen prioridad sobre las despedidas.</p>
    {loaded?(calibration?<><p><strong>Hay una configuración guardada en este navegador.</strong> ¿La cámara sigue en el mismo lugar o quieres enseñar los recorridos de nuevo?</p><div className="fairIntroActions"><button autoFocus onClick={()=>chooseSetup(true)}>Usar configuración guardada</button><button onClick={()=>chooseSetup(false)}>Enseñar recorridos de nuevo</button></div></>:<><button autoFocus onClick={()=>{setIntro(false);setOpen(true);setNotice("Activa la cámara y completa el recorrido pendiente. El otro se conserva.")}}>{learned.entry||learned.exit?"Continuar recorridos guardados":"Comenzar configuración"}</button>{(learned.entry||learned.exit)&&<button onClick={()=>chooseSetup(false)}>Borrar recorridos y comenzar de nuevo</button>}</>):<p>Cargando configuración…</p>}
    <button className="fairIntroClose" onClick={onChangeMode}>Elegir otro modo</button>
@@ -90,7 +90,7 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
    <p role="status">{notice}</p>
    {active&&<><small>{activity}</small><button onClick={()=>{pause();camera.stop();setOpen(true);setNotice("Feria detenida. Cámara y micrófono apagados.")}}>Detener feria y dispositivos</button></>}
    {open&&<>
-    <p>Preparación: enseña una entrada y una salida con la cámara fija. Después prueba sin voz. Si mueves la cámara, vuelve a calibrar.</p>
+    <p>Preparación: enseña una entrada y una salida con la cámara fija. La prueba sin voz es opcional. Si mueves la cámara, vuelve a calibrar.</p>
     <canvas ref={canvas} width={320} height={240} aria-label="Vista de cámara para configurar recorridos"/>
     <p>{camera.status==="ready"?activity:camera.status==="loading"?"Cargando detector de personas…":"Cámara apagada"}</p>
     {camera.error&&<p role="alert">{camera.error}</p>}
@@ -99,8 +99,8 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
     <button disabled={camera.status!=="ready"||Boolean(recording)||active} onClick={()=>learn("exit")}>{recording==="exit"?"Aprendiendo salida…":"3. Enseñar salida (hasta 12 s)"}</button></div>
     {recording&&<button onClick={()=>finishRecording(recording)}>Finalizar recorrido de {recording==="entry"?"entrada":"salida"}</button>}
     <p>Recorridos captados: entrada {learned.entry?"✓":"pendiente"} · salida {learned.exit?"✓":"pendiente"}.</p>
-    <p>{reuse&&calibration?"Configuración guardada seleccionada. Puedes activarla sin enseñar de nuevo; usa los botones de entrada y salida si cambiaste el lugar.":<> {recording?`Grabando ${recording==="entry"?"entrada":"salida"}: ${captured} muestras captadas.`:calibration?"Calibración disponible. Prueba sin voz:":`Recorridos: entrada ${learned.entry?"guardada":"pendiente"} · salida ${learned.exit?"guardada":"pendiente"}.`} Comprobación sin voz: entrada {tested.entry?"✓":"pendiente"} · salida {tested.exit?"✓":"pendiente"}.</>}</p>
-    <button disabled={active||camera.status!=="ready"||!calibration||(!reuse&&(!tested.entry||!tested.exit))||Boolean(recording)} onClick={activate}>4. Activar feria con audio</button>
+    <p>{reuse&&calibration?"Configuración guardada seleccionada. Puedes activarla sin enseñar de nuevo; usa los botones de entrada y salida si cambiaste el lugar.":<> {recording?`Grabando ${recording==="entry"?"entrada":"salida"}: ${captured} muestras captadas.`:calibration?"Calibración lista. Puedes activar la feria con audio.":`Recorridos: entrada ${learned.entry?"guardada":"pendiente"} · salida ${learned.exit?"guardada":"pendiente"}.`} Comprobación opcional sin voz (no bloquea la activación): entrada {tested.entry?"✓":"pendiente"} · salida {tested.exit?"✓":"pendiente"}.</>}</p>
+    <button disabled={active||camera.status!=="ready"||!calibration||Boolean(recording)} onClick={activate}>4. Activar feria con audio</button>
     <div className="fairButtons"><button disabled={!active||!available} onClick={()=>announce("welcome")}>Dar bienvenida</button><button disabled={!active||!available||activity.startsWith("Entrada")} onClick={()=>announce("goodbye")}>Despedir</button></div>
     <small>El análisis de personas ocurre en este equipo. Solo se guardan coordenadas de los recorridos y la calibración, sin imágenes ni identidad. La dirección se estima por el recorrido; una espalda por sí sola no confirma una salida. No es un contador de asistencia.</small>
    </>}
