@@ -107,7 +107,7 @@ test('saved route drafts retain a single route and reject malformed or oversized
 
 test('slow camera samples still detect entry and exit instead of expiring the entire history',()=>{
  const c=calibrateFair(walk(.2,.8),walk(.8,.2));
- for(const interval of [650,900,1300]){
+ for(const interval of [650,900,1300,2200]){
   const entry=new FairMotion(),exit=new FairMotion();let a,b;
   for(let i=0;i<3;i++){a=entry.update([box(.2+i*.04)],i*interval,c);b=exit.update([box(.4-i*.04)],i*interval,c)}
   assert.equal(a.entering,true,`entry interval ${interval}`);assert.equal(a.leaving,false);

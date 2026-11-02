@@ -65,7 +65,7 @@ el arbitraje entrada/salida. No sustituyen una prueba real de cámara, volumen,
 pronunciación y permisos de reproducción del navegador.
 
 El seguimiento adapta su historial a la frecuencia real del detector (hasta
-cuatro segundos). Detecta recorridos sostenidos con tres muestras incluso a
-650–1300 ms entre muestras. Para cruces breves de solo dos muestras exige un
+seis segundos). Detecta recorridos sostenidos con tres muestras incluso a
+650–2200 ms entre muestras. Para cruces breves de solo dos muestras exige un
 desplazamiento mayor, para no confundir pequeñas oscilaciones con una entrada.
 Esto no garantiza detectar todos los cruces ni sustituye la prueba con cámara.
