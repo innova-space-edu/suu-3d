@@ -104,3 +104,24 @@ test('saved route drafts retain a single route and reject malformed or oversized
  assert.equal(validFairExamples({entry:Array(121).fill({x:.5,y:.5,size:.2}),exit:[]}),false);
  assert.equal(validFairExamples({entry:[],exit:'missing'}),false);
 });
+
+test('slow camera samples still detect entry and exit instead of expiring the entire history',()=>{
+ const c=calibrateFair(walk(.2,.8),walk(.8,.2));
+ for(const interval of [650,900,1300,2200]){
+  const entry=new FairMotion(),exit=new FairMotion();let a,b;
+  for(let i=0;i<3;i++){a=entry.update([box(.2+i*.04)],i*interval,c);b=exit.update([box(.4-i*.04)],i*interval,c)}
+  assert.equal(a.entering,true,`entry interval ${interval}`);assert.equal(a.leaving,false);
+  assert.equal(b.leaving,true,`exit interval ${interval}`);assert.equal(b.entering,false);
+ }
+});
+test('a fast crossing can trigger from two strong samples but small jitter cannot',()=>{
+ const c=calibrateFair(walk(.2,.8),walk(.8,.2)),motion=new FairMotion();
+ motion.update([box(.2)],0,c);assert.equal(motion.update([box(.35)],250,c).entering,true);
+ const jitter=new FairMotion();jitter.update([box(.2)],0,c);assert.deepEqual(jitter.update([box(.23)],250,c),{entering:false,leaving:false});
+});
+
+test('slow detections can link a wider crossing without treating it as a new person every frame',()=>{
+ const c=calibrateFair(walk(.2,.8),walk(.8,.2)),motion=new FairMotion();
+ motion.update([box(.2)],0,c);assert.equal(motion.update([box(.46)],1300,c).entering,true);
+ const distant=new FairMotion();distant.update([box(.05)],0,c);assert.deepEqual(distant.update([box(.7)],1300,c),{entering:false,leaving:false});
+});

@@ -5,38 +5,41 @@ import {useLipSync} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import {fairSpokenText} from "@/lib/speech-text";
 import {requestPiperAudio} from "@/lib/piper-client";
-import {prepareFairAudio,playFairAudio,clearFairAudio,type FairClip} from "@/lib/fair-audio";
+import {fairRecordingVoice,prepareFairAudio,playFairAudio,clearFairAudio,type FairClip} from "@/lib/fair-audio";
 import type {FairVoiceCommand} from "./SuuVoiceMode";
 const Avatar=dynamic(()=>import("./SuuAvatar"),{ssr:false});
-type Props={text:string;prepare:boolean;enabled:boolean;ttsLocal?:boolean;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;cameraActive:boolean;announcement:FairVoiceCommand|null;onAvailable:(value:boolean)=>void;onAnnouncementEnd:(success:boolean)=>void;onClose:()=>void};
+export type FairAudioState={ready:boolean;message:string};
+type Props={onAudioState:(state:FairAudioState)=>void;text:string;prepare:boolean;enabled:boolean;ttsLocal?:boolean;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;cameraActive:boolean;announcement:FairVoiceCommand|null;onAvailable:(value:boolean)=>void;onAnnouncementEnd:(success:boolean)=>void;onClose:()=>void};
 /** Announcement-only renderer: no recognition or microphone hooks are mounted. */
-export default function SuuFairNarrator({text,prepare,enabled,ttsLocal,voiceId,language,quality,solid,cameraActive,announcement,onAvailable,onAnnouncementEnd,onClose}:Props){
+export default function SuuFairNarrator({onAudioState,text,prepare,enabled,ttsLocal,voiceId,language,quality,solid,cameraActive,announcement,onAvailable,onAnnouncementEnd,onClose}:Props){
  const [status,setStatus]=useState("Configura los recorridos para preparar la bienvenida."),[ready,setReady]=useState(false),[playing,setPlaying]=useState(false),[energy,setEnergy]=useState(0),[revision,setRevision]=useState(0),[muted,setMuted]=useState(false);
  const clips=useRef<FairClip[]>([]),generation=useRef<AbortController|null>(null),playback=useRef<AbortController|null>(null),player=useRef<HTMLAudioElement|null>(null),seen=useRef(0);
  const mutedRef=useRef(muted);mutedRef.current=muted;
+ const audioState=useRef(onAudioState);audioState.current=onAudioState;
  const available=useRef(onAvailable),ended=useRef(onAnnouncementEnd);available.current=onAvailable;ended.current=onAnnouncementEnd;
  const lips=useLipSync(),meter=useSpeechMeter(setEnergy);
- const local=Boolean(ttsLocal&&(voiceId.startsWith("piper:")||voiceId==="browser:preferred"));
- const remote=!voiceId.startsWith("browser:")&&!voiceId.startsWith("piper:");
+ const targetVoice=fairRecordingVoice(Boolean(ttsLocal),voiceId);
+ const local=targetVoice==="piper-dell-configured";
+ useEffect(()=>{audioState.current({ready:ready&&!muted,message:muted?"Audio silenciado. Activa el sonido para recibir a los visitantes.":status})},[ready,muted,status]);
  useEffect(()=>{available.current(enabled&&ready&&!playing&&!muted)},[enabled,ready,playing,muted]);
  useEffect(()=>{if(player.current)player.current.muted=muted},[muted]);
  useEffect(()=>{
   if(!prepare)return;
   const ctl=new AbortController();generation.current=ctl;setReady(false);clips.current=[];
-  if(!local&&!remote){setStatus("Para guardar la bienvenida, selecciona Piper Dell o una voz EDUAI en Configuración. La voz del navegador no permite exportar audio.");return()=>ctl.abort()}
-  const voice=local?"piper-dell-configured":voiceId;
+  if(!targetVoice){setStatus("Para guardar la bienvenida, selecciona Piper Dell o una voz EDUAI en Configuración. La voz del navegador no permite exportar audio.");return()=>ctl.abort()}
+  const voice=targetVoice;
   setStatus("Preparando la grabación completa. Esto solo se hace la primera vez para esta voz y guion.");
   void prepareFairAudio(fairSpokenText(text,language),JSON.stringify([voice,language]),ctl.signal,async(phrase,signal)=>{
    const timeout=AbortSignal.timeout(55000),combined=AbortSignal.any([signal,timeout]);
    if(local)return requestPiperAudio(phrase,combined);
-   const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:phrase,voiceId,language,mode:"fair"}),signal:combined});
+   const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:phrase,voiceId:targetVoice,language,mode:"fair"}),signal:combined});
    if(!res.ok)throw new Error(`No se pudo generar la voz (${res.status}). Reintenta para continuar los fragmentos pendientes.`);
    return res.blob();
   },(done,total)=>{if(!ctl.signal.aborted)setStatus(`Preparando bienvenida: ${done} de ${total} fragmentos.`)}).then(result=>{
    if(ctl.signal.aborted)return;clips.current=result.clips;setReady(true);setStatus(result.persisted?"Bienvenida completa guardada en este navegador. Lista para reutilizar al detectar entradas.":"Bienvenida lista en memoria. El navegador no permitió guardarla; se perderá al cerrar esta página.");
   }).catch(e=>{if(!ctl.signal.aborted)setStatus(e instanceof Error?e.message:"No se pudo preparar la bienvenida.")});
   return()=>{ctl.abort();if(generation.current===ctl)generation.current=null};
- },[prepare,text,voiceId,language,local,remote,revision]);
+ },[prepare,text,targetVoice,language,local,revision]);
  useEffect(()=>{
   if(!enabled){playback.current?.abort();player.current?.pause();lips.stop();meter.stop();setPlaying(false)}
  },[enabled,lips.stop,meter.stop]);

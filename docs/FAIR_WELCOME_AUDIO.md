@@ -4,6 +4,10 @@ Bienvenida usa un narrador independiente de la conversación normal. No monta
 reconocimiento, STT ni captura de micrófono. Solo solicita cámara (`audio:false`)
 para distinguir los recorridos de entrada y salida ya configurados.
 
+El panel muestra el último trayecto reconocido y el estado del audio. La feria
+solo se activa cuando la cámara, la calibración y la grabación están listas,
+y el sonido no está silenciado.
+
 Una entrada activa la bienvenida completa y un resumen de los 15 trabajos del
 catálogo, sin usar un LLM. Fuentes: catálogo revisado en `lib/fair-guide.ts` y
 los guiones proporcionados en `Podcasts_SUU_Expo_Ciencias_2026(1).zip`, incluido
@@ -34,8 +38,8 @@ memoria. Borrar datos del navegador o usar otro equipo requiere generarlo de
 nuevo. No es una garantía de funcionamiento offline de toda la aplicación.
 
 Piper Dell se usa para la voz Piper o «preferida» cuando está configurado. Una
-voz EDUAI seleccionada usa `/api/voice` durante la preparación inicial. No hay
-cambio silencioso de proveedor. Las voces SpeechSynthesis del navegador no
+voz EDUAI seleccionada usa `/api/voice` durante la preparación inicial. La opción Automática conserva su respaldo EDUAI cuando Piper no está
+configurado. Una voz explícita no cambia de proveedor por un fallo de síntesis. Las voces SpeechSynthesis del navegador no
 permiten exportar audio: se explica que debe elegirse Piper o EDUAI.
 
 Si se cambia el modelo/hablante Piper en el Dell sin cambiar su ID web, pulsar
@@ -59,3 +63,9 @@ reproducción y libera URLs temporales; cerrar también cancela la preparación.
 Las pruebas automatizadas verifican caché, cancelación, integridad del texto y
 el arbitraje entrada/salida. No sustituyen una prueba real de cámara, volumen,
 pronunciación y permisos de reproducción del navegador.
+
+El seguimiento adapta su historial a la frecuencia real del detector (hasta
+seis segundos). Detecta recorridos sostenidos con tres muestras incluso a
+650–2200 ms entre muestras. Para cruces breves de solo dos muestras exige un
+desplazamiento mayor, para no confundir pequeñas oscilaciones con una entrada.
+Esto no garantiza detectar todos los cruces ni sustituye la prueba con cámara.

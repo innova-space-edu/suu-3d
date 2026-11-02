@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 const compile=p=>ts.transpileModule(readFileSync(p,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-const {fairAudioChunks,prepareFairAudio,playFairAudio,clearFairAudio}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-audio.ts')).toString('base64'));
+const {fairRecordingVoice,fairAudioChunks,prepareFairAudio,playFairAudio,clearFairAudio}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-audio.ts')).toString('base64'));
 const {FAIR_SCRIPTS,FairFlow}=await import('data:text/javascript;base64,'+Buffer.from(compile('lib/fair-flow.ts')).toString('base64'));
 const audio=()=>new Blob([new Uint8Array(200)],{type:'audio/wav'});
 function storage(){const entries=new Map();return {entries,open:async()=>({match:async k=>entries.get(k)?.clone(),put:async(k,r)=>entries.set(k,r.clone()),keys:async()=>[...entries.keys()].map(k=>new Request(k)),delete:async k=>entries.delete(k.url??k)}),delete:async()=>{entries.clear();return true}}}
@@ -60,4 +60,13 @@ test('playback follows all saved clips and cancellation releases its URL',async(
 test('welcome renderer cannot mount microphone or speech-recognition code',()=>{
  const src=readFileSync('components/SuuFairNarrator.tsx','utf8');assert.doesNotMatch(src,/useMicrophoneInput|useDellSTT|getUserMedia|SpeechRecognition|\.record\(/);
  const parent=readFileSync('components/SuuFairMode.tsx','utf8');assert.match(parent,/<SuuFairNarrator/);assert.doesNotMatch(parent,/announce\("goodbye"\)/);
+});
+
+test('automatic voice can prepare without Piper, while explicit device-only stays device-only',()=>{
+ assert.equal(fairRecordingVoice(false,'browser:preferred'),'es-MX-DaliaNeural');
+ assert.equal(fairRecordingVoice(true,'browser:preferred'),'piper-dell-configured');
+ assert.equal(fairRecordingVoice(false,'browser:auto'),null);
+ assert.equal(fairRecordingVoice(true,'browser:auto'),null);
+ assert.equal(fairRecordingVoice(false,'piper:daniela'),null);
+ assert.equal(fairRecordingVoice(false,'es-ES-ElviraNeural'),'es-ES-ElviraNeural');
 });
