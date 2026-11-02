@@ -157,3 +157,11 @@ test('Dell streaming extends only on progress and stays inside a 48s response bu
   assert.equal(delays.at(-1),1000);
  }finally{Date.now=realNow;globalThis.setTimeout=realSet;globalThis.clearTimeout=realClear}
 }));
+
+test('brief conversation bounds generation and requests short answers without changing normal defaults',()=>isolated(async()=>{
+ process.env.GROQ_API_KEY='test';const bodies=[];
+ globalThis.fetch=async(_,options)=>{bodies.push(JSON.parse(options.body));return Response.json({choices:[{message:{content:'Una respuesta breve.'}}]})};
+ await chatWithFallback([{role:'user',content:'Explica la gravedad'}],'system',{brief:true});
+ await chatWithFallback([{role:'user',content:'Explica la gravedad'}],'system');
+ assert.equal(bodies[0].max_tokens,64);assert.match(bodies[0].messages[0].content,/máximo 30 palabras/);assert.equal(bodies[1].max_tokens,900);
+}));

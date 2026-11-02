@@ -9,9 +9,9 @@ import {fairRecordingVoice,prepareFairAudio,playFairAudio,clearFairAudio,type Fa
 import type {FairVoiceCommand} from "./SuuVoiceMode";
 const Avatar=dynamic(()=>import("./SuuAvatar"),{ssr:false});
 export type FairAudioState={ready:boolean;message:string};
-type Props={onAudioState:(state:FairAudioState)=>void;text:string;prepare:boolean;enabled:boolean;ttsLocal?:boolean;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;cameraActive:boolean;announcement:FairVoiceCommand|null;onAvailable:(value:boolean)=>void;onAnnouncementEnd:(success:boolean)=>void;onClose:()=>void};
+type Props={modePicker?:React.ReactNode;onAudioState:(state:FairAudioState)=>void;text:string;prepare:boolean;enabled:boolean;ttsLocal?:boolean;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;cameraActive:boolean;announcement:FairVoiceCommand|null;onAvailable:(value:boolean)=>void;onAnnouncementEnd:(success:boolean)=>void;onClose:()=>void};
 /** Announcement-only renderer: no recognition or microphone hooks are mounted. */
-export default function SuuFairNarrator({onAudioState,text,prepare,enabled,ttsLocal,voiceId,language,quality,solid,cameraActive,announcement,onAvailable,onAnnouncementEnd,onClose}:Props){
+export default function SuuFairNarrator({modePicker,onAudioState,text,prepare,enabled,ttsLocal,voiceId,language,quality,solid,cameraActive,announcement,onAvailable,onAnnouncementEnd,onClose}:Props){
  const [status,setStatus]=useState("Configura los recorridos para preparar la bienvenida."),[ready,setReady]=useState(false),[playing,setPlaying]=useState(false),[energy,setEnergy]=useState(0),[revision,setRevision]=useState(0),[muted,setMuted]=useState(false);
  const clips=useRef<FairClip[]>([]),generation=useRef<AbortController|null>(null),playback=useRef<AbortController|null>(null),player=useRef<HTMLAudioElement|null>(null),seen=useRef(0);
  const mutedRef=useRef(muted);mutedRef.current=muted;
@@ -51,7 +51,7 @@ export default function SuuFairNarrator({onAudioState,text,prepare,enabled,ttsLo
  },[announcement,enabled,ready,lips.audio,lips.stop,meter.start,meter.stop]);
  useEffect(()=>()=>{generation.current?.abort();playback.current?.abort();player.current?.pause()},[]);
  return <div className="voiceOnlyOverlay" role="dialog" aria-label="Bienvenida automática sin micrófono" aria-modal="true">
-  <header className="voiceHeader"><div><b>SUU</b><span>EXPO CIENCIAS 2026 · BIENVENIDA GRABADA · MICRÓFONO APAGADO</span></div><button onClick={onClose} aria-label="Cerrar bienvenida">×</button></header>
+  <header className="voiceHeader">{modePicker}<div><b>SUU</b><span>EXPO CIENCIAS 2026 · BIENVENIDA GRABADA · MICRÓFONO APAGADO</span></div><button onClick={onClose} aria-label="Cerrar bienvenida">×</button></header>
   <div className="voiceScene"><Avatar lipSync={lips.signal} speaking={playing} listening={false} energy={energy} quality={quality} solid={solid} cameraActive={cameraActive}/></div>
   <div className="voiceBottom"><div className="voiceStatus">{playing?"HABLANDO":ready?"GRABACIÓN LISTA":prepare?"PREPARANDO":"EN CONFIGURACIÓN"}</div><p aria-live="polite">{status}</p>
    <div className="voiceControls"><button disabled={!prepare||playing} onClick={()=>{generation.current?.abort();setRevision(v=>v+1)}}>Preparar / reintentar</button><button disabled={!prepare||playing} onClick={()=>{generation.current?.abort();setReady(false);void clearFairAudio().then(()=>setRevision(v=>v+1)).catch(()=>setStatus("No se pudo borrar la grabación."))}}>Regenerar audio</button><button onClick={()=>setMuted(v=>!v)}>{muted?"Activar sonido":"Silenciar"}</button><button onClick={onClose}>Salir</button></div>

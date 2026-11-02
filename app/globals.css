@@ -50,3 +50,5 @@
 .voiceBottom small{max-height:30px;overflow:auto}
 .voiceControls{justify-content:center}
 @media(max-width:660px){.voiceOnlyOverlay{grid-template-rows:70px minmax(0,1fr) clamp(190px,30dvh,245px)}.voiceHeader{height:70px}.voiceScene{max-height:none}.voiceBottom{padding:8px 12px 12px}}
+
+.suuModePicker{display:flex;align-items:center;gap:6px;font-size:12px;min-width:0}.suuModePicker select{background:#102330;color:#e6fffa;border:1px solid #37606b;border-radius:8px;padding:8px;max-width:240px}.microphoneSettings{border:1px solid #37606b;border-radius:10px;padding:12px;display:grid;gap:10px}.microphoneSettings meter{width:100%}.voiceHeader .suuModePicker{flex-shrink:0}.voiceHeader .suuModePicker select{max-width:190px}@media(max-width:660px){.voiceHeader .suuModePicker select{max-width:150px}.voiceHeader .suuModePicker{font-size:0}.topActions .suuModePicker select{max-width:180px}}

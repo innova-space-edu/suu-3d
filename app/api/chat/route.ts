@@ -15,6 +15,7 @@ export async function POST(req:NextRequest){
   if(body.length>95000)return NextResponse.json({error:"Solicitud excesiva"},{status:413});
   const input=JSON.parse(body);
   const {messages,domain,mode}=parseConversation(input);
+  const brief=input.responseStyle==="brief";
   let context="",bridgeWarning="";
   let sources:{title:string;url:string}[]=[];
   if(mode!=="fair"&&domain!=="general"&&bridgeAvailable(domain)){
@@ -33,7 +34,7 @@ export async function POST(req:NextRequest){
     async start(stream){
      const emit=(event:unknown)=>{if(!ctl.signal.aborted)stream.enqueue(encoder.encode(JSON.stringify(event)+"\n"))};
      try{
-      const result=await chat(messages,domain,context,mode,{signal:ctl.signal,onDelta:text=>emit({type:"delta",text})});
+      const result=await chat(messages,domain,context,mode,{brief,signal:ctl.signal,onDelta:text=>emit({type:"delta",text})});
       emit({type:"done",...result,sources:result.sources.length?result.sources:sources,bridgeWarning});
       if("timing" in result)console.info("[SUU chat timing]",{provider:result.provider,...result.timing});
      }catch(e){
@@ -47,7 +48,7 @@ export async function POST(req:NextRequest){
    });
    return new Response(response,{headers:{"Content-Type":"application/x-ndjson; charset=utf-8","Cache-Control":"no-store, no-transform","X-Accel-Buffering":"no"}});
   }
-  const result=await chat(messages,domain,context,mode,{signal:req.signal});
+  const result=await chat(messages,domain,context,mode,{brief,signal:req.signal});
   return NextResponse.json({...result,reply:mode==="fair"?fairAudienceText(result.reply):result.reply,sources:result.sources.length?result.sources:sources,bridgeWarning},{headers:{"Cache-Control":"no-store"}});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"No se pudo responder"},{status:502})}
 }

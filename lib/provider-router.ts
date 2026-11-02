@@ -89,7 +89,7 @@ export function providerStatus(): Status[] {
   }));
 }
 
-export type ChatStreamOptions = {signal?: AbortSignal; onDelta?: (text: string) => void};
+export type ChatStreamOptions = {brief?:boolean;signal?: AbortSignal; onDelta?: (text: string) => void};
 
 /** OpenAI-compatible SSE. Bound events, preserve UTF-8 and reject broken streams. */
 export async function readChatCompletionStream(response: Response, onDelta: (text: string) => void) {
@@ -182,10 +182,12 @@ export async function chatWithFallback(messages: ChatMessage[], system: string, 
           temperature: 0.4,
           // A 0.8B CPU model produces about 10 tokens/s on this Dell.
           // Cap Dell output so it usually completes before the 22s failover.
-          max_tokens: p.id === "dell" ? 96 : 900,
+          max_tokens: options.brief ? 64 : p.id === "dell" ? 96 : 900,
           messages: [{
             role: "system",
-            content: p.id === "dell"
+            content: options.brief
+              ? system + "\nConversación ágil: responde directamente en el idioma del usuario con una o dos frases cortas, máximo 30 palabras, sin listas. No inventes y pide aclaración si hace falta."
+              : p.id === "dell"
               ? system + "\nPara esta respuesta de voz, usa español natural y sé breve: 1-3 frases, sin listas, máximo 45 palabras. Responde directamente a lo preguntado."
               : system,
           }, ...messages],

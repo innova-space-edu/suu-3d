@@ -22,8 +22,9 @@ type SpeechResult={results:Record<number,Record<number,{transcript:string}>>};
 type Recognition={processLocally?:boolean;lang:string;continuous:boolean;interimResults:boolean;onresult:((event:SpeechResult)=>void)|null;onerror:((e:{error:string})=>void)|null;onend:(()=>void)|null;onspeechstart:(()=>void)|null;onspeechend:(()=>void)|null;start(track?:MediaStreamTrack):void;stop():void};
 type RecognitionConstructor=new()=>Recognition;
 export type FairVoiceCommand={id:number;text:string};
-type Props={ttsLocal?:boolean;sttAvailable?:boolean;modeLabel?:string;fairMode?:boolean;enabled?:boolean;announcement?:FairVoiceCommand|null;onAnnouncementEnd?:(success:boolean)=>void;onAvailable?:(available:boolean)=>void;noiseReduction:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];domain:Domain;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive:boolean};
-export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabel,fairMode=false,enabled,announcement,onAnnouncementEnd,onAvailable,noiseReduction,onClose,onTurn,initial,domain,voiceId,language,quality,solid,tracking,cameraActive}:Props){
+import type {MicrophonePreferences} from "@/lib/microphone";
+type Props={modePicker?:React.ReactNode;microphonePreferences?:MicrophonePreferences;brief?:boolean;ttsLocal?:boolean;sttAvailable?:boolean;modeLabel?:string;fairMode?:boolean;enabled?:boolean;announcement?:FairVoiceCommand|null;onAnnouncementEnd?:(success:boolean)=>void;onAvailable?:(available:boolean)=>void;noiseReduction:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];domain:Domain;voiceId:string;language:string;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive:boolean};
+export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=false,ttsLocal=false,sttAvailable=false,modeLabel,fairMode=false,enabled,announcement,onAnnouncementEnd,onAvailable,noiseReduction,onClose,onTurn,initial,domain,voiceId,language,quality,solid,tracking,cameraActive}:Props){
  const [phase,setPhase]=useState<"idle"|"listening"|"thinking"|"speaking"|"error">("idle");
  const [subtitle,setSubtitle]=useState("Activa el micrófono para conversar con SUU.");
  const caption=useRef<HTMLParagraphElement|null>(null);
@@ -47,7 +48,7 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
  const stop=useCallback(()=>{stopSignal.current=true;stt.cancel();abort.current?.abort();abort.current=null;recognitionGeneration.current++;humanSpeaking.current=false;announcing.current=false;recognizer.current?.stop();microphone.stop();recognizer.current=null;listeningRef.current=false;releaseAudio();setPhaseNow("idle");setSubtitle("Conversación pausada. Pulsa para reanudar.");},[releaseAudio,microphone.stop,stt.cancel]);
  useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();microphone.stop();releaseAudio()},[releaseAudio,microphone.stop]);
  const finishSpeech=(success=true)=>{releaseAudio();if(announcing.current){announcing.current=false;endRef.current?.(success)}setPhaseNow("idle");restart()};
- const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},250)};
+ const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},brief?120:250)};
  const speak=async(text:string,skipPiper=false)=>{
   const displayText=fairMode?fairAudienceText(text):text;
   const speechLocale=(voiceId.startsWith("browser:")?window.speechSynthesis?.getVoices().find(v=>"browser:"+v.voiceURI===voiceId)?.lang:voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0])||language;
@@ -136,7 +137,7 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
   try{
    if(!fairMode&&!muted&&ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
     releaseAudio();const ticket=speechGeneration.current;piperAbort.current=ctl;
-    const answer=await streamPiperReply({messages,domain,locale:language,signal:ctl.signal,
+    const answer=await streamPiperReply({brief,messages,domain,locale:language,signal:ctl.signal,
      onText:reply=>{if(!stopSignal.current&&ticket===speechGeneration.current)setSubtitle(reply)},
      onResult:data=>{
       if(stopSignal.current||ticket!==speechGeneration.current)return;
@@ -158,7 +159,7 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
    let data:{reply?:string;provider?:string};
    if(fairMode)data={reply:fairResponse(messages),provider:"Catálogo Expo · local"};
    else{
-    const response=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},signal:ctl.signal,body:JSON.stringify({messages,domain})});
+    const response=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},signal:ctl.signal,body:JSON.stringify({messages,domain,responseStyle:brief?"brief":undefined})});
     data=await response.json();
     if(!response.ok)throw new Error((data as {error?:string}).error||"Error de conversación");
    }
@@ -175,7 +176,7 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
    const generation=++recognitionGeneration.current;
    listeningRef.current=true;setPhaseNow("listening");setSubtitle("Escuchando con transcripción del Dell…");
    try{
-    const transcript=await stt.record(language,noiseReduction);
+    const transcript=await stt.record(language,noiseReduction&&microphone.headphonesActive,microphonePreferences,brief);
     if(stopSignal.current||generation!==recognitionGeneration.current)return;
     listeningRef.current=false;
     if(transcript){setSubtitle("Tú: "+transcript);void converse(transcript)}
@@ -192,15 +193,17 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
   const Constructor=web.SpeechRecognition||web.webkitSpeechRecognition;
   if(!Constructor){setPhaseNow("error");setSubtitle("Para conversación continua usa Chrome o Edge con permiso de micrófono.");return}
   const r=new Constructor();recognizer.current=r;r.lang=language;r.continuous=false;r.interimResults=false;
+  const preparation=recognitionGeneration.current;
   await preferOnDeviceRecognition(Constructor,r,language);
+  if(stopSignal.current||preparation!==recognitionGeneration.current)return;
   const recognitionTicket=++recognitionGeneration.current;
   let transcript="",failed=false;
   r.onspeechstart=()=>{if(recognitionTicket!==recognitionGeneration.current)return;humanSpeaking.current=true;reportAvailable()};
   r.onspeechend=()=>{};
   r.onresult=e=>{if(recognitionTicket!==recognitionGeneration.current)return;humanSpeaking.current=true;reportAvailable();transcript=e.results[0]?.[0]?.transcript?.trim()||"";if(transcript)setSubtitle("Tú: "+transcript)};
-  r.onerror=e=>{if(recognitionTicket!==recognitionGeneration.current)return;if(fairMode&&e.error==="no-speech")return;humanSpeaking.current=false;microphone.stop();failed=true;listeningRef.current=false;if(stopSignal.current)return;setPhaseNow("error");setSubtitle(e.error==="not-allowed"?"Habilita el micrófono en los permisos del navegador.":"No se reconoció la voz. Pulsa para intentarlo de nuevo.")};
+  r.onerror=e=>{if(recognitionTicket!==recognitionGeneration.current)return;if(e.error==="no-speech")return;humanSpeaking.current=false;microphone.stop();failed=true;listeningRef.current=false;if(stopSignal.current)return;setPhaseNow("error");setSubtitle(e.error==="not-allowed"?"Habilita el micrófono en los permisos del navegador.":"No se reconoció la voz. Pulsa para intentarlo de nuevo.")};
   r.onend=()=>{if(recognitionTicket!==recognitionGeneration.current)return;humanSpeaking.current=false;microphone.stop();listeningRef.current=false;if(stopSignal.current||failed)return;if(transcript)void converse(transcript);else {setPhaseNow("idle");restart()}};
-  try{listeningRef.current=true;setPhaseNow("listening");setSubtitle("Preparando micrófono...");if(!await microphone.start(r,noiseReduction)){if(recognitionTicket===recognitionGeneration.current)listeningRef.current=false;return}if(stopSignal.current||recognitionTicket!==recognitionGeneration.current){microphone.stop();listeningRef.current=false;return}setSubtitle("Escuchando... habla con naturalidad.");}catch{listeningRef.current=false;setPhaseNow("error");setSubtitle("No se pudo iniciar el micrófono.")}
+  try{listeningRef.current=true;setPhaseNow("listening");setSubtitle("Preparando micrófono...");if(!await microphone.start(r,noiseReduction,microphonePreferences)){if(recognitionTicket===recognitionGeneration.current)listeningRef.current=false;return}if(stopSignal.current||recognitionTicket!==recognitionGeneration.current){microphone.stop();listeningRef.current=false;return}setSubtitle("Escuchando... habla con naturalidad.");}catch{listeningRef.current=false;setPhaseNow("error");setSubtitle("No se pudo iniciar el micrófono.")}
  }
  const speakRef=useRef(speak);speakRef.current=speak;
  const commandSeen=useRef(0);
@@ -215,12 +218,12 @@ export default function SuuVoiceMode({ttsLocal=false,sttAvailable=false,modeLabe
  useEffect(()=>{if(enabled===undefined)return;if(enabled){stopSignal.current=false;void listenRef.current()}else {stop();if(fairMode)setSubtitle("Configura los recorridos y activa la feria con audio para comenzar.")}},[enabled,stop,fairMode]);
  const toggle=()=>{if(announcing.current){stop();announcing.current=false;endRef.current?.(false);return}if(phaseRef.current!=="idle"&&phaseRef.current!=="error"){stop();return}stopSignal.current=false;void listen()};
  return <div className="voiceOnlyOverlay" role="dialog" aria-label="Modo conversación de voz con SUU" aria-modal="true">
-  <header className="voiceHeader"><div><b>SUU</b><span>{modeLabel||(fairMode?"EXPO CIENCIAS 2026":"CONVERSACIÓN SOLO VOZ")} · {provider||"LISTA"}</span></div><button onClick={()=>{stop();onClose()}} aria-label="Cerrar modo voz"><X size={25}/></button></header>
+  <header className="voiceHeader">{modePicker}<div><b>SUU</b><span>{modeLabel||(fairMode?"EXPO CIENCIAS 2026":"CONVERSACIÓN SOLO VOZ")} · {provider||"LISTA"}</span></div><button onClick={()=>{stop();onClose()}} aria-label="Cerrar modo voz"><X size={25}/></button></header>
   <div className="voiceScene"><Avatar lipSync={lips.signal} speaking={phase==="speaking"} listening={phase==="listening"} energy={energy} quality={quality} solid={solid} tracking={tracking} cameraActive={cameraActive}/></div>
   <div className="voiceBottom"><div className={"voiceStatus "+phase}><AudioLines size={19}/><span>{phase==="listening"?"ESCUCHANDO":phase==="thinking"?"PENSANDO":phase==="speaking"?"HABLANDO":phase==="error"?"REINTENTAR":"EN ESPERA"}</span></div>
    <p ref={caption} aria-live="polite" tabIndex={0} aria-label="Respuesta de SUU">{subtitle}</p>
    <div className="voiceControls"><button className="voiceRound" disabled={fairMode&&enabled===false} onClick={toggle} title={phase==="idle"||phase==="error"?"Iniciar voz":"Pausar voz"}>{phase==="idle"||phase==="error"?<Mic size={27}/>:<MicOff size={27}/>}</button><button className="voiceSmall" onClick={()=>setMuted(v=>!v)} title={muted?"Activar audio":"Silenciar audio"}>{muted?<VolumeX size={20}/>:<Volume2 size={20}/>}</button><button className="voiceSmall" onClick={()=>{stop();onClose()}}>Salir</button></div>
-   <small>{phase==="listening"&&(microphone.mode==="standard"?"Reducción estándar activa. ":"Entrada gestionada por el navegador. ")}Voz instalada del dispositivo prioritaria. {sttAvailable?"Transcripción de audio mediante el Dell protegido; el navegador queda como respaldo.":"Transcripción mediante navegador; el STT del Dell se activará cuando esté configurado."} La escucha se reanuda al terminar y el micrófono se detiene al cerrar o pausar.</small>
+   <small>{brief&&"Modo ágil: respuestas breves y pausa de 0,6 s en STT Dell. Si corta tus frases, cambia a Conversación. "}{phase==="listening"&&(microphone.mode==="standard"?"Reducción estándar activa. ":"Entrada gestionada por el navegador. ")}Voz instalada del dispositivo prioritaria. {sttAvailable?"Transcripción de audio mediante el Dell protegido; el navegador queda como respaldo.":"Transcripción mediante navegador; el STT del Dell se activará cuando esté configurado."} La escucha se reanuda al terminar y el micrófono se detiene al cerrar o pausar.</small>
   </div>
  </div>;
 }

@@ -104,3 +104,11 @@ test('first voice fragment is ready at 60 characters without waiting for a long 
  assert.equal(parts[0],'Los planetas orbitan alrededor del Sol por la atracción');
  splitter.finish();assert.equal(parts.join(' '),'Los planetas orbitan alrededor del Sol por la atracción gravitatoria');
 });
+
+test('brief voice conversation preserves streaming and carries its server response style',async()=>{
+ const previous=globalThis.fetch;let sent;
+ try{globalThis.fetch=async(_,options)=>{sent=JSON.parse(options.body);return Response.json({reply:'Hola',provider:'test'})};
+ const chunks=[];await requestStreamedChat([{role:'user',content:'Hola'}],'general',new AbortController().signal,t=>chunks.push(t),true);
+ assert.equal(sent.stream,true);assert.equal(sent.responseStyle,'brief');assert.deepEqual(chunks,['Hola']);
+ }finally{globalThis.fetch=previous}
+});

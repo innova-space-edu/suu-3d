@@ -1,6 +1,6 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
-import {disableNoiseReduction,startMicrophoneRecognition,type RecognitionInput,type MicrophoneMode} from "@/lib/microphone";
+import {disableNoiseReduction,startMicrophoneRecognition,type RecognitionInput,type MicrophoneMode,type MicrophonePreferences} from "@/lib/microphone";
 import {useHeadphoneOutput} from "./useHeadphoneOutput";
 export function useMicrophoneInput(){
  const stream=useRef<MediaStream|null>(null),generation=useRef(0);
@@ -8,7 +8,7 @@ export function useMicrophoneInput(){
  const headphones=useHeadphoneOutput();
  const [mode,setMode]=useState<MicrophoneMode>("off");
  const stop=useCallback(()=>{generation.current++;stream.current?.getTracks().forEach(t=>t.stop());stream.current=null;setMode("off")},[]);
- const start=useCallback(async(rec:RecognitionInput,reduceNoise:boolean)=>{
+ const start=useCallback(async(rec:RecognitionInput,reduceNoise:boolean,preferences:MicrophonePreferences={})=>{
   stop();const ticket=generation.current;
   try{
    const connected=await headphones.refresh();
@@ -21,7 +21,7 @@ export function useMicrophoneInput(){
      if(!await headphones.refresh())await Promise.all(captured.getAudioTracks().map(disableNoiseReduction));
      return captured;
     }catch(e){captured.getTracks().forEach(track=>track.stop());throw e}
-   }},()=>ticket!==generation.current);
+   }},()=>ticket!==generation.current,preferences);
    if(!result)return false;
    if(ticket!==generation.current){result.stream?.getTracks().forEach(t=>t.stop());return false}
    stream.current=result.stream||null;setMode(result.mode);return true;
