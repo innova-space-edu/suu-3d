@@ -1,11 +1,12 @@
 export type FairAnnouncement = "welcome" | "goodbye";
 export const FAIR_SCRIPTS: Record<FairAnnouncement, string> = {
-  welcome: "¡Bienvenidos a la Expo Ciencias 2026! Soy SUU, su guía. Aquí encontrarán trabajos de estudiantes de educación básica y media sobre salud y bienestar, reciclaje, cuidado del medioambiente, energías renovables, astronomía y tecnología. Podrán conocer una maqueta de colegio sustentable con energía solar, el museo virtual Museo Vivo y exposiciones sobre telescopios y el universo. Si tienen preguntas, pueden conversar conmigo. ¡Disfruten el recorrido!",
+  welcome: "¡Bienvenidos a la Expo Ciencias 2026 del Colegio Providencia de Antofagasta! Soy SUU, la asistente holográfica de Innova Space Education. Les acompañaré con un resumen de los trabajos que pueden conocer durante su visita.\nColegio Providencia sustentable presenta una maqueta con materiales reutilizados y un circuito de energía solar. Invita a imaginar cómo aprovechar la luz del Sol en nuestro establecimiento; su viabilidad requiere medir la generación y el consumo de energía.\nEn Arte reciclado encontrarán tortugas de cartón, laberintos y alcancías: ejemplos de cómo dar una segunda vida a los materiales mediante la creatividad.\nReutilización natural propone recuperar hojas usadas por una cara, clasificarlas y convertirlas en bloques para apuntes y borradores.\nMural decorativo transforma cartón y envases en una obra colectiva y presenta una experiencia de germinación de semillas.\nPulpo sustentable nos presenta a Octavio, el aliado del mar. Este personaje didáctico enseña sobre contaminación marina, separación de residuos y cuidado del océano.\nMuseo Vivo es un recorrido digital por la vida silvestre. Reúne imágenes e información sobre especies, sus hábitats y conservación, y permite explorar el museo mediante un código QR.\nProyecto ALMA explica cómo las antenas del observatorio de Chajnantor trabajan coordinadas para estudiar el universo y por qué el desierto de Atacama ofrece condiciones favorables para observarlo.\nLos trabajos sobre el telescopio y su impacto en Chile explican cómo lentes, espejos y antenas permiten observar el cielo. Presentan distintos instrumentos y la importancia de los observatorios chilenos.\nLa exposición sobre Adelina Gutiérrez Alonso rescata la trayectoria de esta astrónoma chilena y sus aportes al estudio y la medición de la luz de las estrellas.\nEl impacto ambiental del teléfono celular nos invita a conocer sus materias primas y los residuos electrónicos. Propone reflexionar sobre reparar, reutilizar y llevar los dispositivos a una recolección especializada.\nUso excesivo del celular aborda el equilibrio entre las pantallas, el descanso, la concentración y la convivencia, con propuestas de actividades sin pantalla.\nManejo de las emociones invita a reconocer lo que sentimos, hacer una pausa y conversar con una persona de confianza.\nSalud mental aborda el autocuidado, la organización del día, el descanso y la importancia de pedir apoyo cuando lo necesitamos.\nAlimentación saludable presenta propuestas de colaciones escolares y hábitos variados, considerando las necesidades y posibles alergias de cada persona.\nPrevención del consumo de drogas reúne información y propuestas educativas para tomar decisiones informadas, fortalecer la confianza y facilitar la búsqueda de apoyo.\nEn esta feria encontrarán maquetas, creaciones, investigaciones y propuestas educativas. No todos los trabajos presentan resultados medidos: observen los afiches para conocer qué realizó y qué propone cada equipo.\nLes invito a recorrer la exposición con curiosidad, observar cada trabajo y compartir lo que descubran. ¡Disfruten la Expo Ciencias!",
   goodbye: "Hasta luego. Espero que hayan disfrutado de esta exposición de ciencias y tecnología.",
 };
 
 /** One announcement in flight. Activity expires; visitors never become a speech queue. */
 export class FairFlow {
+  constructor(private readonly entriesOnly=false) {}
   private entry = -Infinity;
   private exit = -Infinity;
   private exitConsumed = -Infinity;
@@ -13,13 +14,13 @@ export class FairFlow {
   private inFlight: FairAnnouncement | null = null;
   observe(now: number, entering: boolean, leaving: boolean) {
     if (entering) { this.entry = now; this.exit = -Infinity; }
-    else if (leaving) this.exit = now;
+    else if (leaving) {this.exit = now;if(this.entriesOnly)this.entry=-Infinity;}
   }
   poll(now: number, available: boolean): FairAnnouncement | null {
     if (!available || this.inFlight || now < this.next) return null;
     const entering = now - this.entry < 1400;
     const leaving = this.exit > this.exitConsumed && now - this.exit < 5000;
-    const kind = entering ? "welcome" : leaving && now - this.entry > 3000 ? "goodbye" : null;
+    const kind = entering ? "welcome" : !this.entriesOnly && leaving && now - this.entry > 3000 ? "goodbye" : null;
     if (kind) {
       this.inFlight = kind;
       this.exitConsumed = this.exit;
