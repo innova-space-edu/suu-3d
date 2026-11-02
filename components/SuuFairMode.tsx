@@ -1,6 +1,6 @@
 "use client";
 import {useEffect,useRef,useState} from "react";
-import SuuFairNarrator from "./SuuFairNarrator";
+import SuuFairNarrator,{type FairAudioState} from "./SuuFairNarrator";
 import SuuVoiceMode,{type FairVoiceCommand} from "./SuuVoiceMode";
 import {useFairCamera} from "@/hooks/useFairCamera";
 import {calibrateFair,FAIR_SCRIPTS,FairFlow,FairRecording,validFairExamples,validCalibration,type FairCalibration,type FairAnnouncement,type MotionSample} from "@/lib/fair-flow";
@@ -29,6 +29,8 @@ export default function SuuFairMode(props:Props){
 
 function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
  const [calibration,setCalibration]=useState<FairCalibration|null>(null),[active,setActive]=useState(false),[open,setOpen]=useState(true),[recording,setRecording]=useState<"entry"|"exit"|null>(null),[tested,setTested]=useState({entry:false,exit:false}),[activity,setActivity]=useState("Sin movimiento"),[notice,setNotice]=useState("Coloca la cámara en su posición definitiva y prueba ambos recorridos."),[command,setCommand]=useState<FairVoiceCommand|null>(null),[available,setAvailable]=useState(false);
+ const [lastMovement,setLastMovement]=useState("Todavía no se detectó un recorrido.");
+ const [audioState,setAudioState]=useState<FairAudioState>({ready:false,message:"Audio pendiente de preparar."});
  const [intro,setIntro]=useState(true),[loaded,setLoaded]=useState(false),[reuse,setReuse]=useState(false);
  const introDialog=useRef<HTMLDialogElement|null>(null);
  useEffect(()=>{if(intro){introDialog.current?.showModal()}},[intro]);
@@ -40,6 +42,7 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
   const ctx=canvas.current?.getContext("2d");
   if(ctx&&camera.video.current){ctx.drawImage(camera.video.current,0,0,320,240);ctx.strokeStyle="#7effce";ctx.lineWidth=2;for(const b of boxes)ctx.strokeRect(b.x*320,b.y*240,b.width*320,b.height*240)}
   if(trial.current){trial.current.add(boxes);setCaptured(trial.current.samples.length)}
+  if(movement.entering)setLastMovement("Entrada reconocida");else if(movement.leaving)setLastMovement("Salida reconocida: no activa la voz");
   setActivity(movement.entering?"Entrada detectada (prioridad)":movement.leaving?"Salida detectada":boxes.length?"Personas visibles, sin recorrido claro":"Sin movimiento");
   if(calibration&&!trial.current&&!isActive.current)setTested(t=>{const entry=t.entry||movement.entering,exit=t.exit||(!movement.entering&&movement.leaving);return entry===t.entry&&exit===t.exit?t:{entry,exit}});
   if(isActive.current)flow.current.observe(now,movement.entering,movement.leaving);
@@ -75,7 +78,7 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
   timeout.current=setTimeout(()=>finishRecording(kind),12000);
  };
  const chooseSetup=(keep:boolean)=>{setReuse(keep);setIntro(false);setOpen(true);if(keep){setNotice("Usando los recorridos guardados. Activa la cámara y después la feria con audio. Si cambiaste la posición, enseña los recorridos de nuevo.")}else{setCalibration(null);setTested({entry:false,exit:false});examples.current={entry:[],exit:[]};setLearned({entry:false,exit:false});try{localStorage.removeItem(STORAGE);localStorage.removeItem(DRAFT)}catch{}setNotice("Activa la cámara, enseña entrada y salida y activa la feria. Puedes comprobar los recorridos sin voz si lo deseas.")}};
- const activate=()=>{flow.current=new FairFlow(true);setCommand(null);busySince.current=0;setActive(true);setOpen(false);setNotice("Feria activa. Una narración completa por vez; solo las entradas activan la voz. Si el audio aún se prepara, SUU esperará a tenerlo listo.")};
+ const activate=()=>{flow.current=new FairFlow(true);setCommand(null);busySince.current=0;setActive(true);setOpen(false);setNotice("Feria activa y audio listo. Camina por la entrada configurada: una narración completa por vez. Las salidas no activan la voz.")};
  return <div className="fairMode">
   {intro&&<dialog ref={introDialog} className="fairIntro" aria-labelledby="fairIntroTitle" onCancel={e=>{e.preventDefault();close()}}>
    <h2 id="fairIntroTitle">Antes de comenzar la feria</h2>
@@ -85,11 +88,13 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
    <button className="fairIntroClose" onClick={onChangeMode}>Elegir otro modo</button>
    <button className="fairIntroClose" onClick={close}>Salir del modo feria</button>
   </dialog>}
-  <SuuFairNarrator {...props} onClose={close} text={FAIR_SCRIPTS.welcome} prepare={!intro} enabled={active} cameraActive={camera.status==="ready"} announcement={command} onAvailable={value=>{availableRef.current=value;setAvailable(value)}} onAnnouncementEnd={success=>{busySince.current=0;flow.current.complete(performance.now());if(!success){setActive(false);setNotice("No se completó el audio. Revisa la grabación y vuelve a activar la feria.");setOpen(true)}}}/>
+  <SuuFairNarrator {...props} onAudioState={setAudioState} onClose={close} text={FAIR_SCRIPTS.welcome} prepare={!intro} enabled={active} cameraActive={camera.status==="ready"} announcement={command} onAvailable={value=>{availableRef.current=value;setAvailable(value)}} onAnnouncementEnd={success=>{busySince.current=0;flow.current.complete(performance.now());if(!success){setActive(false);setNotice("No se completó el audio. Revisa la grabación y vuelve a activar la feria.");setOpen(true)}}}/>
 
   <aside className={"fairPanel "+(!open?"compact":"")} aria-label="Configuración de feria">
    <div className="fairTitle"><b>Expo Ciencias 2026</b><button onClick={()=>setOpen(v=>!v)}>{open?"Ocultar ajustes":"Configurar"}</button></div>
    <p role="status">{notice}</p>
+   <p><strong>Último trayecto:</strong> {lastMovement}</p>
+   <p role="status"><strong>Audio:</strong> {audioState.message}</p>
    {active&&<><small>{activity}</small><button onClick={()=>{pause();camera.stop();setOpen(true);setNotice("Feria detenida. Cámara y micrófono apagados.")}}>Detener feria y dispositivos</button></>}
    {open&&<>
     <p>Si ya configuraste entrada y salida, puedes usar la configuración guardada al abrir este modo o crear una nueva. Se guarda en este navegador. Preparación: enseña una entrada y una salida con la cámara fija. La prueba sin voz es opcional. Si mueves la cámara, vuelve a calibrar.</p>
@@ -103,7 +108,7 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
     {recording&&<button onClick={()=>finishRecording(recording)}>Finalizar recorrido de {recording==="entry"?"entrada":"salida"}</button>}
     <p>Recorridos captados: entrada {learned.entry?"✓":"pendiente"} · salida {learned.exit?"✓":"pendiente"}.</p>
     <p>{reuse&&calibration?"Configuración guardada seleccionada. Puedes activarla sin enseñar de nuevo; usa los botones de entrada y salida si cambiaste el lugar.":<> {recording?`Grabando ${recording==="entry"?"entrada":"salida"}: ${captured} muestras captadas.`:calibration?"Calibración lista. Puedes activar la feria con audio.":`Recorridos: entrada ${learned.entry?"guardada":"pendiente"} · salida ${learned.exit?"guardada":"pendiente"}.`} Comprobación opcional sin voz (no bloquea la activación): entrada {tested.entry?"✓":"pendiente"} · salida {tested.exit?"✓":"pendiente"}.</>}</p>
-    <button disabled={active||camera.status!=="ready"||!calibration||Boolean(recording)} onClick={activate}>4. Activar feria con audio</button>
+    <button disabled={active||camera.status!=="ready"||!calibration||!audioState.ready||Boolean(recording)} onClick={activate}>4. Activar feria con audio</button>
     <div className="fairButtons"><button disabled={!active||!available} onClick={()=>announce("welcome")}>Probar bienvenida grabada</button></div>
     <small>El análisis de personas ocurre en este equipo. Solo se guardan coordenadas de los recorridos y la calibración, sin imágenes ni identidad. La dirección se estima por el recorrido; una espalda por sí sola no confirma una salida. No es un contador de asistencia.</small>
    </>}

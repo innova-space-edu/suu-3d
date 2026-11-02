@@ -78,22 +78,26 @@ type Track={box:PersonBox;history:{at:number;sample:MotionSample}[];seen:number}
 export class FairMotion {
   private tracks:Track[]=[];
   update(boxes:PersonBox[],now:number,calibration:FairCalibration|null) {
-    const old=this.tracks.filter(t=>now-t.seen<1200),used=new Set<Track>();
+    const old=this.tracks.filter(t=>now-t.seen<1800),used=new Set<Track>();
     const tracks:Track[]=[];let entering=false,leaving=false;
     for(const box of boxes){
       const sample=sampleBox(box);
       const ranked=old.filter(t=>!used.has(t)).map(t=>({t,d:Math.hypot(sample.x-sampleBox(t.box).x,sample.y-sampleBox(t.box).y)+Math.abs(sample.size-sampleBox(t.box).size)})).sort((a,b)=>a.d-b.d);
       const match=ranked[0];
       const track=match&&match.d<.24?match.t:{box,history:[],seen:now};used.add(track);
-      track.history=track.history.filter(s=>now-s.at<1000);track.history.push({at:now,sample});track.box=box;track.seen=now;tracks.push(track);
+      const interval=Math.max(0,now-track.seen);
+      const windowMs=Math.min(4000,Math.max(1000,interval*2.5));
+      track.history=track.history.filter(s=>now-s.at<=windowMs);track.history.push({at:now,sample});track.box=box;track.seen=now;tracks.push(track);
       const first=track.history[0];
-      if(!calibration||now-first.at<500||track.history.length<3)continue;
+      if(!calibration||now-first.at<200||track.history.length<2)continue;
       const axis=calibration.axis,v=sample[axis];
       if(v<calibration.low-.08||v>calibration.high+.08)continue;
       const delta=(v-first.sample[axis])*calibration.direction;
       const threshold=Math.max(.025,(calibration.high-calibration.low)*.09);
-      if(delta>threshold)entering=true;
-      if(delta< -threshold)leaving=true;
+      // A two-frame crossing needs a larger displacement than a sustained track.
+      const required=track.history.length<3?Math.max(.08,(calibration.high-calibration.low)*.18):threshold;
+      if(delta>required)entering=true;
+      if(delta< -required)leaving=true;
     }
     // Retain unmatched tracks briefly across missed detections; never emit their old activity.
     this.tracks=[...tracks,...old.filter(t=>!used.has(t))];

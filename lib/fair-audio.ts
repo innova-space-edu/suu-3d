@@ -1,5 +1,12 @@
 /** Only the fixed public fair narration is stored, never visitor speech. */
 export type FairClip={text:string;blob:Blob};
+/** Automatic retains its explicit Piper → EDUAI policy; device-only never goes remote. */
+export function fairRecordingVoice(ttsLocal:boolean,voiceId:string):string|null {
+ if(ttsLocal&&(voiceId==="browser:preferred"||voiceId.startsWith("piper:")))return "piper-dell-configured";
+ if(voiceId==="browser:preferred")return "es-MX-DaliaNeural";
+ if(voiceId.startsWith("browser:")||voiceId.startsWith("piper:"))return null;
+ return voiceId;
+}
 const CACHE="suu-fair-welcome-audio-v1";
 const MAX_TOTAL=48_000_000;
 export function fairAudioChunks(text:string):string[]{
