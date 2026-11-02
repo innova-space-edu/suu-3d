@@ -15,7 +15,7 @@ export async function readVoiceResponse(response:Response):Promise<{blob:Blob;wo
  if(typeof data.audio!=="string"||data.audio.length>12000000)throw new Error("Audio inválido");
  const raw=atob(data.audio),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
  const words=Array.isArray(data.words)?data.words.filter((w:SpeechWord)=>w&&typeof w.text==="string"&&Number.isFinite(w.start)&&Number.isFinite(w.end)&&w.start>=0&&w.end>w.start).slice(0,1200):[];
- return {blob:new Blob([bytes],{type:"audio/mpeg"}),words};
+ return {blob:new Blob([bytes],{type:data.mime==="audio/wav"?"audio/wav":"audio/mpeg"}),words};
 }
 export function useLipSync(){
  const signal=useRef<LipPlayback|null>(null),release=useRef<()=>void>(()=>{});

@@ -17,9 +17,11 @@ services:
     ports:
       - "127.0.0.1:8096:8096"
     volumes:
+      - ./library:/library
       - ./models:/voices:ro
       - ./secrets/tts_api_key.txt:/run/secrets/tts_api_key:ro
     environment:
+      SUU_AUDIO_LIBRARY_DIR: /library
       PIPER_API_TOKEN_FILE: /run/secrets/tts_api_key
       PIPER_MODEL: /voices/${PIPER_MODEL_NAME:-es_AR-daniela-high}.onnx
       PIPER_SPEAKER_ID: "${PIPER_SPEAKER_ID:-0}"
