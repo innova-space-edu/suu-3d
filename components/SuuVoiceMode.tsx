@@ -6,8 +6,9 @@ import {spokenText,fairSpokenText,fairAudienceText} from "@/lib/speech-text";
 import {useLipSync,readVoiceResponse} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
 import {selectBrowserVoice} from "@/lib/browser-voice";
+import {cachedRecording,responseLibraryKey,findLibraryReply,rememberLibraryReply} from "@/lib/audio-library";
 import {streamPiperReply} from "@/lib/chat-stream";
-import {playPiperSpeech} from "@/lib/piper-playback";
+import {playPiperSpeech,playPiperPhrases} from "@/lib/piper-playback";
 import {preferOnDeviceRecognition} from "@/lib/local-recognition";
 import {fairResponse} from "@/lib/fair-response";
 import dynamic from "next/dynamic";
@@ -49,7 +50,7 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
  useEffect(()=>()=>{stopSignal.current=true;abort.current?.abort();recognizer.current?.stop();microphone.stop();releaseAudio()},[releaseAudio,microphone.stop]);
  const finishSpeech=(success=true)=>{releaseAudio();if(announcing.current){announcing.current=false;endRef.current?.(success)}setPhaseNow("idle");restart()};
  const restart=()=>{if(stopSignal.current)return;window.setTimeout(()=>{if(!stopSignal.current)void listen()},brief?120:250)};
- const speak=async(text:string,skipPiper=false)=>{
+ const speak=async(text:string,skipPiper=false,savedParts?:string[])=>{
   const displayText=fairMode?fairAudienceText(text):text;
   const speechLocale=(voiceId.startsWith("browser:")?window.speechSynthesis?.getVoices().find(v=>"browser:"+v.voiceURI===voiceId)?.lang:voiceId.match(/^[a-z]{2}-[A-Z]{2}/)?.[0])||language;
   text=(fairMode?fairSpokenText:spokenText)(text,speechLocale);
@@ -62,7 +63,8 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
    const ctl=new AbortController();piperAbort.current=ctl;
    let played=false;
    try{
-    await playPiperSpeech(text,ctl.signal,(player,url,phrase)=>{
+    const play=savedParts?(signal:AbortSignal,handler:Parameters<typeof playPiperSpeech>[2])=>playPiperPhrases((async function*(){yield* savedParts})(),signal,handler):(signal:AbortSignal,handler:Parameters<typeof playPiperSpeech>[2])=>playPiperSpeech(text,signal,handler);
+    await play(ctl.signal,(player,url,phrase)=>{
      if(stopSignal.current||ticket!==speechGeneration.current)throw new Error("Reproducción cancelada");
      if(audioUrl.current)URL.revokeObjectURL(audioUrl.current);
      audioUrl.current=url;audio.current=player;player.muted=mutedRef.current;
@@ -96,9 +98,12 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
     const cacheKey=JSON.stringify([remoteId,speechLocale,text.slice(0,1900)]);
     let recording=fairMode?fairAudioCache.get(cacheKey):undefined;
     if(!recording){
-     const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId:remoteId,language:speechLocale,mode:fairMode?"fair":undefined,timings:true}),signal:abort.current?.signal});
+     const voiceCtl=new AbortController();piperAbort.current=voiceCtl;
+     const saved=await cachedRecording(text.slice(0,1900),remoteId,speechLocale,fairMode?"fair":"conversation",voiceCtl.signal,async()=>{
+     const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId:remoteId,language:speechLocale,mode:fairMode?"fair":undefined,timings:true}),signal:voiceCtl.signal});
      if(!res.ok)throw new Error("No hay motor de voz en línea");
-     recording=await readVoiceResponse(res);
+     return readVoiceResponse(res);
+     });recording={blob:saved.blob,words:saved.words as Awaited<ReturnType<typeof readVoiceResponse>>["words"]};
      if(fairMode&&recording.blob.size<=8000000){
       while(fairAudioCache.size&&(fairAudioBytes+recording.blob.size>24000000||fairAudioCache.size>=60)){
        const oldest=fairAudioCache.keys().next().value!;fairAudioBytes-=fairAudioCache.get(oldest)!.blob.size;fairAudioCache.delete(oldest);
@@ -135,8 +140,13 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
   const messages=[...history.current,{role:"user" as const,content:text}].slice(-16);history.current=messages;
   const ctl=new AbortController();abort.current=ctl;
   try{
+   const replyKey=await responseLibraryKey(messages,domain,brief);
+   const saved=!fairMode?await findLibraryReply(replyKey):null;
+   if(stopSignal.current||ctl.signal.aborted)return;
+   if(saved){history.current=[...messages,{role:"assistant" as const,content:saved.reply}].slice(-16);setProvider("Biblioteca · respuesta guardada");onTurnRef.current(text,saved.reply,"Biblioteca");await speak(saved.reply,false,saved.parts);return}
    if(!fairMode&&!muted&&ttsLocal&&language.startsWith("es")&&(voiceId==="browser:preferred"||voiceId==="piper:daniela")){
     releaseAudio();const ticket=speechGeneration.current;piperAbort.current=ctl;
+    const spokenParts:string[]=[];
     const answer=await streamPiperReply({brief,messages,domain,locale:language,signal:ctl.signal,
      onText:reply=>{if(!stopSignal.current&&ticket===speechGeneration.current)setSubtitle(reply)},
      onResult:data=>{
@@ -145,6 +155,7 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
       setProvider(data.provider);onTurnRef.current(text,data.reply,data.provider);
      },
      onClip:(player,url,phrase)=>{
+      spokenParts.push(phrase);
       if(stopSignal.current||ticket!==speechGeneration.current)throw new Error("Reproducción cancelada");
       audioUrl.current=url;audio.current=player;player.muted=mutedRef.current;
       lips.audio(player,phrase,[]);void meter.start(player);
@@ -152,6 +163,7 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
      },
     });
     if(stopSignal.current||ticket!==speechGeneration.current)return;
+    if(!answer.voiceError)void rememberLibraryReply(replyKey,answer.result.reply,answer.result.provider,spokenParts);
     if(answer.voiceError&&!answer.spoken)await speak(answer.result.reply,true);
     else finishSpeech(!answer.voiceError);
     return;
@@ -167,6 +179,7 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
    const rawReply=String(data.reply||"").trim();const reply=fairMode?fairAudienceText(rawReply):rawReply;if(!reply)throw new Error("SUU no generó una respuesta");
    history.current=[...messages,{role:"assistant" as const,content:reply}].slice(-16);
    setProvider(String(data.provider||""));onTurnRef.current(text,reply,String(data.provider||""));
+   if(!fairMode)void rememberLibraryReply(replyKey,reply,String(data.provider||""));
    await speak(reply);
   }catch(e){if(stopSignal.current||ctl.signal.aborted)return;releaseAudio();setPhaseNow("error");setSubtitle(e instanceof Error?e.message:"No se pudo completar la respuesta. Pulsa el micrófono para reintentar.")}
  };

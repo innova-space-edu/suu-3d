@@ -3,6 +3,7 @@ import {useEffect,useRef,useState} from "react";
 import dynamic from "next/dynamic";
 import {useLipSync} from "@/hooks/useLipSync";
 import {useSpeechMeter} from "@/hooks/useSpeechMeter";
+import {cachedRecording,clearLibraryVoice} from "@/lib/audio-library";
 import {fairSpokenText} from "@/lib/speech-text";
 import {requestPiperAudio} from "@/lib/piper-client";
 import {fairRecordingVoice,prepareFairAudio,playFairAudio,clearFairAudio,type FairClip} from "@/lib/fair-audio";
@@ -31,10 +32,10 @@ export default function SuuFairNarrator({modePicker,onAudioState,text,prepare,en
   setStatus("Preparando la grabación completa. Esto solo se hace la primera vez para esta voz y guion.");
   void prepareFairAudio(fairSpokenText(text,language),JSON.stringify([voice,language]),ctl.signal,async(phrase,signal)=>{
    const timeout=AbortSignal.timeout(55000),combined=AbortSignal.any([signal,timeout]);
-   if(local)return requestPiperAudio(phrase,combined);
-   const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:phrase,voiceId:targetVoice,language,mode:"fair"}),signal:combined});
+   if(local)return requestPiperAudio(phrase,combined,"fair");
+   const item=await cachedRecording(phrase,targetVoice!,language,"fair",signal,async()=>{const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:phrase,voiceId:targetVoice,language,mode:"fair"}),signal:combined});
    if(!res.ok)throw new Error(`No se pudo generar la voz (${res.status}). Reintenta para continuar los fragmentos pendientes.`);
-   return res.blob();
+   return {blob:await res.blob(),words:[]};});return item.blob;
   },(done,total)=>{if(!ctl.signal.aborted)setStatus(`Preparando bienvenida: ${done} de ${total} fragmentos.`)}).then(result=>{
    if(ctl.signal.aborted)return;clips.current=result.clips;setReady(true);setStatus(result.persisted?"Bienvenida completa guardada en este navegador. Lista para reutilizar al detectar entradas.":"Bienvenida lista en memoria. El navegador no permitió guardarla; se perderá al cerrar esta página.");
   }).catch(e=>{if(!ctl.signal.aborted)setStatus(e instanceof Error?e.message:"No se pudo preparar la bienvenida.")});
@@ -54,7 +55,7 @@ export default function SuuFairNarrator({modePicker,onAudioState,text,prepare,en
   <header className="voiceHeader">{modePicker}<div><b>SUU</b><span>EXPO CIENCIAS 2026 · BIENVENIDA GRABADA · MICRÓFONO APAGADO</span></div><button onClick={onClose} aria-label="Cerrar bienvenida">×</button></header>
   <div className="voiceScene"><Avatar lipSync={lips.signal} speaking={playing} listening={false} energy={energy} quality={quality} solid={solid} cameraActive={cameraActive}/></div>
   <div className="voiceBottom"><div className="voiceStatus">{playing?"HABLANDO":ready?"GRABACIÓN LISTA":prepare?"PREPARANDO":"EN CONFIGURACIÓN"}</div><p aria-live="polite">{status}</p>
-   <div className="voiceControls"><button disabled={!prepare||playing} onClick={()=>{generation.current?.abort();setRevision(v=>v+1)}}>Preparar / reintentar</button><button disabled={!prepare||playing} onClick={()=>{generation.current?.abort();setReady(false);void clearFairAudio().then(()=>setRevision(v=>v+1)).catch(()=>setStatus("No se pudo borrar la grabación."))}}>Regenerar audio</button><button onClick={()=>setMuted(v=>!v)}>{muted?"Activar sonido":"Silenciar"}</button><button onClick={onClose}>Salir</button></div>
+   <div className="voiceControls"><button disabled={!prepare||playing} onClick={()=>{generation.current?.abort();setRevision(v=>v+1)}}>Preparar / reintentar</button><button disabled={!prepare||playing} onClick={()=>{generation.current?.abort();setReady(false);void Promise.all([clearFairAudio(),clearLibraryVoice(local?"piper:dell-configured":targetVoice||voiceId)]).then(()=>setRevision(v=>v+1)).catch(()=>setStatus("No se pudo borrar la grabación."))}}>Regenerar audio</button><button onClick={()=>setMuted(v=>!v)}>{muted?"Activar sonido":"Silenciar"}</button><button onClick={onClose}>Salir</button></div>
    <small>Solo cámara para detectar entradas y salidas. No se solicita micrófono. El audio se guarda en este navegador; si cambias la voz Piper del Dell, usa Regenerar audio.</small>
   </div>
  </div>;

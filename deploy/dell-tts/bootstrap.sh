@@ -8,7 +8,7 @@ mode="${1:---dry-run}"
 [[ "$EUID" != 0 ]] || { echo "Ejecutar como propietario, no root"; exit 1; }
 src="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 target="$HOME/suu-tts"
-files=(compose.yaml Dockerfile requirements.txt service.py benchmark.py)
+files=(compose.yaml Dockerfile requirements.txt service.py library_store.py benchmark.py)
 if docker info >/dev/null 2>&1; then cmd=(docker); else
  command -v sudo >/dev/null || { echo "sudo no disponible"; exit 1; }
  sudo -v; cmd=(sudo docker)
@@ -34,7 +34,7 @@ echo "Instalación aislada Piper · $target · 127.0.0.1:8096"
 echo "CPU máximo 1 · RAM máximo 1 GiB · voz Daniela es-AR high (114 MB)"
 echo "No toca: suu-stt, suu-llm, intranet, MCP, PostgreSQL, Cloudflare."
 if [[ "$mode" == --dry-run ]]; then echo "PREVISUALIZACIÓN: sin cambios"; exit 0; fi
-install -d -m 0700 "$target" "$target/models" "$target/secrets"
+install -d -m 0700 "$target" "$target/models" "$target/secrets" "$target/library"
 for f in "${files[@]}"; do cp "$src/$f" "$target/$f"; done
 envfile="$target/.env"
 if [[ -e "$envfile" ]]; then

@@ -1,4 +1,5 @@
 import {NextRequest,NextResponse} from "next/server";
+import {extraTTS,extraVoiceCatalog,ttsProviderStatus} from "@/lib/extra-tts";
 import {EdgeTTS,Constants} from "@andresaya/edge-tts";
 import {authorized,originAllowed,throttle,clientIdentity} from "@/lib/security";
 import {DEFAULT_VOICE_ID,knownVoice,voiceCatalog} from "@/lib/voice-catalog";
@@ -7,7 +8,7 @@ import {wordTimings} from "@/lib/lip-sync";
 export const runtime="nodejs";export const maxDuration=60;
 export async function GET(){
  if(!await authorized())return NextResponse.json({error:"Acceso requerido"},{status:401});
- return NextResponse.json({voices:voiceCatalog(),defaultVoice:DEFAULT_VOICE_ID,privateEduaiVoices:"Requieren sesión EDUAI, MFA y autorización individual"},{headers:{"Cache-Control":"private, no-store"}});
+ return NextResponse.json({voices:voiceCatalog(),providers:ttsProviderStatus(),defaultVoice:DEFAULT_VOICE_ID,privateEduaiVoices:"Requieren sesión EDUAI, MFA y autorización individual"},{headers:{"Cache-Control":"private, no-store"}});
 }
 async function synthesizeEdge(text:string,id:string){
  const tts=new EdgeTTS();
@@ -38,6 +39,12 @@ export async function POST(req:NextRequest){
  if(!text||text.length>2000)return NextResponse.json({error:"Texto inválido"},{status:400});
  if(!knownVoice(voiceId)&&voiceId!=="elevenlabs:default")return NextResponse.json({error:"Voz no permitida"},{status:400});
  text=(fairMode?fairSpokenText:spokenText)(text,knownVoice(voiceId)?.locale||language);
+ if(extraVoiceCatalog().some(v=>v.id===voiceId)){
+  try{const result=await extraTTS(text,voiceId,language,req.signal);if(result.audio.length<100||result.audio.length>3_000_000)throw new Error("Audio inválido");
+   if(timings)return NextResponse.json({audio:result.audio.toString("base64"),words:[],mime:result.type,provider:result.provider},{headers:{"Cache-Control":"private, no-store"}});
+   return new Response(new Uint8Array(result.audio),{headers:{"Content-Type":result.type,"Cache-Control":"private, no-store","X-Suu-Voice-Provider":result.provider}});
+  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Voz no disponible"},{status:503})}
+ }
  if(!text)return NextResponse.json({error:"El texto no contiene contenido para leer"},{status:400});
  const pipeline=voiceId==="elevenlabs:default"?["premium","edge"] as const:["edge","premium"] as const;
  for(const provider of pipeline){

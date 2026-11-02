@@ -1,6 +1,6 @@
 """Authenticated, offline CPU Piper TTS for SUU.
 
-Input: short Spanish JSON text. Output: WAV. No audio or text persistence.
+Input: short Spanish JSON text. Output: WAV. Optional authenticated archive of generated audio.
 """
 import asyncio
 import io
@@ -134,3 +134,46 @@ async def synthesize(request: Request):
             "X-Suu-Audio-Seconds": f"{duration:.3f}",
             "X-Suu-Synthesis-Rtf": f"{elapsed_ms / max(duration * 1000, 1):.3f}",
         })
+
+
+# Optional durable archive. Existing Piper installations work without the mount.
+from library_store import AudioLibrary
+LIBRARY = AudioLibrary(os.environ["SUU_AUDIO_LIBRARY_DIR"]) if os.environ.get("SUU_AUDIO_LIBRARY_DIR") else None
+
+
+def library_auth(request):
+    if not secrets.compare_digest(request.headers.get("authorization", ""), "Bearer " + TOKEN):
+        raise HTTPException(status_code=401, detail="No autorizado")
+    if LIBRARY is None:
+        raise HTTPException(status_code=503, detail="Biblioteca sin configurar")
+
+
+@app.get("/library")
+async def library_list(request: Request):
+    library_auth(request)
+    return {"configured": True, "items": await asyncio.to_thread(LIBRARY.list)}
+
+
+@app.get("/library/{key}")
+async def library_get(key: str, request: Request):
+    library_auth(request)
+    try:
+        return await asyncio.to_thread(LIBRARY.get, key)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Audio no encontrado")
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Audio inválido")
+
+
+@app.post("/library/{key}")
+async def library_put(key: str, request: Request):
+    library_auth(request)
+    body = bytearray()
+    async for part in request.stream():
+        body.extend(part)
+        if len(body) > 4_100_000:
+            raise HTTPException(status_code=413, detail="Audio excesivo")
+    try:
+        return await asyncio.to_thread(LIBRARY.put, key, json.loads(body))
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="No se pudo archivar el audio")

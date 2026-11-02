@@ -1,3 +1,4 @@
+import {cachedRecording} from "@/lib/audio-library";
 /** Request private Dell Piper WAV; diagnostics contain no credentials or speech text. */
 const errors:Record<string,string>={
  missing_config:"Falta configuración del motor en Vercel",
@@ -12,7 +13,7 @@ const errors:Record<string,string>={
  upstream_timeout:"Tiempo de síntesis agotado en el Dell",
  upstream_network:"No se pudo conectar con el túnel del Dell",
 };
-export async function requestPiperAudio(text:string,signal:AbortSignal):Promise<Blob>{
+async function fetchPiperAudio(text:string,signal:AbortSignal):Promise<Blob>{
  let response:Response;
  try{
   response=await fetch("/api/piper",{
@@ -37,4 +38,9 @@ export async function requestPiperAudio(text:string,signal:AbortSignal):Promise<
  const blob=await response.blob();
  if(blob.size<100||blob.size>3_000_000)throw new Error("Tamaño WAV inválido");
  return blob;
+}
+
+export async function requestPiperAudio(text:string,signal:AbortSignal,category="conversation"):Promise<Blob>{
+ const recording=await cachedRecording(text,"piper:dell-configured","es",category,signal,async()=>({blob:await fetchPiperAudio(text,signal),words:[]}));
+ return recording.blob;
 }

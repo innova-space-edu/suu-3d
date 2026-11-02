@@ -8,7 +8,7 @@ const moduleUrl=(file,replacements={})=>{
  for(const [from,to] of Object.entries(replacements))js=js.replaceAll(from,to);
  return 'data:text/javascript;base64,'+Buffer.from(js).toString('base64');
 };
-const client=moduleUrl('lib/piper-client.ts');
+const client=moduleUrl('lib/piper-client.ts',{'@/lib/audio-library':moduleUrl('lib/audio-library.ts')});
 const playback=moduleUrl('lib/piper-playback.ts',{'@/lib/piper-client':client,'@/lib/piper-chunks.mjs':pathToFileURL(process.cwd()+'/lib/piper-chunks.mjs').href});
 const speech=moduleUrl('lib/speech-text.ts');
 const {SpeechBuffer,PhraseQueue,requestStreamedChat,streamPiperReply}=await import(moduleUrl('lib/chat-stream.ts',{'@/lib/speech-text':speech,'@/lib/piper-playback':playback}));
