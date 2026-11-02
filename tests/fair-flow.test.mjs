@@ -119,3 +119,9 @@ test('a fast crossing can trigger from two strong samples but small jitter canno
  motion.update([box(.2)],0,c);assert.equal(motion.update([box(.35)],250,c).entering,true);
  const jitter=new FairMotion();jitter.update([box(.2)],0,c);assert.deepEqual(jitter.update([box(.23)],250,c),{entering:false,leaving:false});
 });
+
+test('slow detections can link a wider crossing without treating it as a new person every frame',()=>{
+ const c=calibrateFair(walk(.2,.8),walk(.8,.2)),motion=new FairMotion();
+ motion.update([box(.2)],0,c);assert.equal(motion.update([box(.46)],1300,c).entering,true);
+ const distant=new FairMotion();distant.update([box(.05)],0,c);assert.deepEqual(distant.update([box(.7)],1300,c),{entering:false,leaving:false});
+});
