@@ -25,7 +25,8 @@ export function useFairCamera(onFrame:(boxes:PersonBox[],now:number,activity:{en
    const loop=()=>{
     if(ticket!==generation.current||!model.current||!video.current)return;
     try{
-     if(element.readyState>=2){const now=performance.now();const boxes=model.current.detectForVideo(element,now).detections.flatMap(d=>{const b=d.boundingBox;return b?[{x:Math.max(0,b.originX/element.videoWidth),y:Math.max(0,b.originY/element.videoHeight),width:Math.min(1,b.width/element.videoWidth),height:Math.min(1,b.height/element.videoHeight)}]:[]});callback.current(boxes,now,motion.current.update(boxes,now,settings.current))}
+     // Timestamp the result after inference so a slow detector cannot expire a fresh entry.
+     if(element.readyState>=2){const frameTime=performance.now();const detections=model.current.detectForVideo(element,frameTime).detections;const now=performance.now();const boxes=detections.flatMap(d=>{const b=d.boundingBox;return b?[{x:Math.max(0,b.originX/element.videoWidth),y:Math.max(0,b.originY/element.videoHeight),width:Math.min(1,b.width/element.videoWidth),height:Math.min(1,b.height/element.videoHeight)}]:[]});callback.current(boxes,now,motion.current.update(boxes,now,settings.current))}
      timer.current=setTimeout(loop,250);
     }catch{stop();setStatus("error");setError("Se interrumpió la cámara. Detén la feria y vuelve a iniciar la prueba.")}
    };loop();
