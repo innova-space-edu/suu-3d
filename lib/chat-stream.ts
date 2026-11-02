@@ -60,9 +60,9 @@ export class SpeechBuffer{
  }
 }
 
-export async function requestStreamedChat(messages:ChatMessage[],domain:Domain,signal:AbortSignal,onDelta:(text:string)=>void):Promise<StreamReply>{
+export async function requestStreamedChat(messages:ChatMessage[],domain:Domain,signal:AbortSignal,onDelta:(text:string)=>void,brief=false):Promise<StreamReply>{
  const response=await fetch("/api/chat",{method:"POST",cache:"no-store",signal,
-  headers:{"Content-Type":"application/json"},body:JSON.stringify({messages,domain,stream:true})});
+  headers:{"Content-Type":"application/json"},body:JSON.stringify({messages,domain,stream:true,responseStyle:brief?"brief":undefined})});
  if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||"No se pudo responder")}
  // Compatibility with an older deployment serving JSON during a rolling update.
  if(!response.headers.get("content-type")?.includes("application/x-ndjson")){
@@ -101,7 +101,7 @@ export async function requestStreamedChat(messages:ChatMessage[],domain:Domain,s
 }
 
 export async function streamPiperReply(options:{
- messages:ChatMessage[];domain:Domain;locale:string;signal:AbortSignal;
+ brief?:boolean;messages:ChatMessage[];domain:Domain;locale:string;signal:AbortSignal;
  onText:(text:string)=>void;onResult:(reply:StreamReply)=>void;onClip:PiperClipHandler;
 }){
  const queue=new PhraseQueue(),audio=new AbortController(),started=performance.now();
@@ -118,7 +118,7 @@ export async function streamPiperReply(options:{
   const result=await requestStreamedChat(options.messages,options.domain,options.signal,delta=>{
    firstTextMs??=performance.now()-started;completeText+=delta;splitter.add(delta);
    if(performance.now()-lastUpdate>80){options.onText(completeText);lastUpdate=performance.now()}
-  });
+  },options.brief);
   const chatDoneMs=performance.now()-started;
   splitter.finish();queue.close();options.onText(result.reply);options.onResult(result);
   const speech=await playback;

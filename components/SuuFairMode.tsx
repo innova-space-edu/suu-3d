@@ -6,16 +6,17 @@ import {useFairCamera} from "@/hooks/useFairCamera";
 import {calibrateFair,FAIR_SCRIPTS,FairFlow,FairRecording,validFairExamples,validCalibration,type FairCalibration,type FairAnnouncement,type MotionSample} from "@/lib/fair-flow";
 import type {ChatMessage} from "@/lib/providers";
 
-type Props={ttsLocal?:boolean;sttAvailable?:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];voiceId:string;language:string;quality:"eco"|"high";solid:boolean;noiseReduction:boolean};
+import type {MicrophonePreferences} from "@/lib/microphone";
+type Props={modePicker?:React.ReactNode;microphonePreferences?:MicrophonePreferences;initialVariant?:"welcome"|"guide";ttsLocal?:boolean;sttAvailable?:boolean;onClose:()=>void;onTurn:(user:string,reply:string,provider:string)=>void;initial:ChatMessage[];voiceId:string;language:string;quality:"eco"|"high";solid:boolean;noiseReduction:boolean};
 const STORAGE="suu-fair-calibration-v1";
 const DRAFT="suu-fair-routes-v1";
 export default function SuuFairMode(props:Props){
- const [variant,setVariant]=useState<"welcome"|"guide"|null>(null);
+ const [variant,setVariant]=useState<"welcome"|"guide"|null>(props.initialVariant||null);
  const chooser=useRef<HTMLDialogElement|null>(null);
  useEffect(()=>{if(variant===null)chooser.current?.showModal()},[variant]);
  return <div className="fairModeShell">
   {variant===null?<dialog ref={chooser} className="fairIntro" aria-labelledby="fairModeTitle" onCancel={e=>{e.preventDefault();props.onClose()}}>
-   <h2 id="fairModeTitle">Modo feria de ciencias</h2>
+   {props.modePicker}<h2 id="fairModeTitle">Modo feria de ciencias</h2>
    <p>Elige cómo participará SUU en la exposición.</p>
    <div className="fairIntroActions">
     <button autoFocus onClick={()=>setVariant("welcome")}><strong>Bienvenida</strong><span className="fairChoiceDescription">Da la bienvenida y resume los trabajos al detectar entradas. Sin micrófono; las salidas no activan la voz. Reutiliza la grabación guardada.</span></button>
@@ -23,7 +24,7 @@ export default function SuuFairMode(props:Props){
    </div>
    <button className="fairIntroClose" onClick={props.onClose}>Cancelar</button>
   </dialog>:variant==="welcome"?<SuuFairWelcome {...props} onChangeMode={()=>setVariant(null)}/>:<SuuVoiceMode {...props} domain="general" fairMode modeLabel="EXPO CIENCIAS 2026 · NORMAL" cameraActive={false}/>}
-  {variant!==null&&<button className="fairModeSwitch" onClick={()=>setVariant(null)}>Cambiar modo de feria</button>}
+  {variant!==null&&!props.modePicker&&<button className="fairModeSwitch" onClick={()=>setVariant(null)}>Cambiar modo de feria</button>}
  </div>;
 }
 
@@ -81,11 +82,11 @@ function SuuFairWelcome({onChangeMode,...props}:Props&{onChangeMode:()=>void}){
  const activate=()=>{flow.current=new FairFlow(true);setCommand(null);busySince.current=0;setActive(true);setOpen(false);setNotice("Feria activa y audio listo. Camina por la entrada configurada: una narración completa por vez. Las salidas no activan la voz.")};
  return <div className="fairMode">
   {intro&&<dialog ref={introDialog} className="fairIntro" aria-labelledby="fairIntroTitle" onCancel={e=>{e.preventDefault();close()}}>
-   <h2 id="fairIntroTitle">Antes de comenzar la feria</h2>
+   {props.modePicker}<h2 id="fairIntroTitle">Antes de comenzar la feria</h2>
    <ol><li>Coloca la cámara en el acceso y déjala fija.</li><li>Activa la cámara. Si es un lugar nuevo, enseña una entrada y una salida con hasta 12 segundos cada una.</li><li>Activa la feria con audio cuando la calibración esté lista. La comprobación sin voz es opcional.</li></ol>
    <p>SUU termina la bienvenida y el resumen de todos los trabajos antes de repetirlos. Solo las entradas activan la voz. Se mantiene la detección de salida, sin despedidas ni micrófono.</p>
    {loaded?(calibration?<><p><strong>Hay una configuración guardada en este navegador.</strong> Ya configuraste la entrada y la salida. Puedes usar la misma configuración o crear una nueva. Usa la guardada si la cámara sigue en la misma posición y orientación.</p><div className="fairIntroActions"><button autoFocus onClick={()=>chooseSetup(true)}>Usar configuración guardada</button><button onClick={()=>chooseSetup(false)}>Crear nueva configuración</button></div></>:<><button autoFocus onClick={()=>{setIntro(false);setOpen(true);setNotice("Activa la cámara y completa el recorrido pendiente. El otro se conserva.")}}>{learned.entry||learned.exit?"Continuar recorridos guardados":"Comenzar configuración"}</button>{(learned.entry||learned.exit)&&<button onClick={()=>chooseSetup(false)}>Borrar recorridos y comenzar de nuevo</button>}</>):<p>Cargando configuración…</p>}
-   <button className="fairIntroClose" onClick={onChangeMode}>Elegir otro modo</button>
+   {!props.modePicker&&<button className="fairIntroClose" onClick={onChangeMode}>Elegir otro modo</button>}
    <button className="fairIntroClose" onClick={close}>Salir del modo feria</button>
   </dialog>}
   <SuuFairNarrator {...props} onAudioState={setAudioState} onClose={close} text={FAIR_SCRIPTS.welcome} prepare={!intro} enabled={active} cameraActive={camera.status==="ready"} announcement={command} onAvailable={value=>{availableRef.current=value;setAvailable(value)}} onAnnouncementEnd={success=>{busySince.current=0;flow.current.complete(performance.now());if(!success){setActive(false);setNotice("No se completó el audio. Revisa la grabación y vuelve a activar la feria.");setOpen(true)}}}/>
