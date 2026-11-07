@@ -51,6 +51,10 @@ export default function SuuFaceV4Lab(){
     <button onClick={()=>{setTalk(false);setPose({jaw:.65})}}>Abrir boca</button>
     <button onClick={()=>{setTalk(false);setPose({smile:.8})}}>Sonreír</button>
     <button onClick={()=>{setTalk(false);setPose({frown:.8})}}>Gesto serio</button>
+    <button onClick={()=>{setTalk(false);setPose({smile:.50,browUp:.08})}}>Alegría</button>
+    <button onClick={()=>{setTalk(false);setPose({browUp:.32,smile:.08})}}>Curiosidad</button>
+    <button onClick={()=>{setTalk(false);setPose({browUp:.20,smile:.10})}}>Empatía</button>
+    <button onClick={()=>{setTalk(false);setPose({frown:.28,browDown:.14})}}>Preocupación</button>
     <button onClick={()=>{setTalk(false);setPose({blinkLeft:1,blinkRight:1})}}>Parpadear</button>
     <button aria-pressed={talk} onClick={()=>{setPose({});setTalk(v=>!v)}}>Hablar · demostración</button>
    </div></div>
@@ -78,6 +82,6 @@ export default function SuuFaceV4Lab(){
     <input id="suu-dot-opacity" type="range" min=".2" max="1" step=".05" value={contrast} onChange={e=>setContrast(Number(e.target.value))}/>
    </div>
   </section>
-  <p className="labNote">Luz azul global, superficie de apoyo y puntos sobre sus relieves. Base anatómica con párpados, orejas y cuello conectados; globos oculares con volumen, aún experimental: no es una reconstrucción exacta de las referencias y sus expresiones son deformaciones experimentales. La demostración de habla es simulada; la conversación combina tiempos por palabra cuando la voz los entrega y formas de labios estimadas dentro de cada palabra. No es alineación fonética exacta.</p>
+  <p className="labNote">Luz azul global, superficie de apoyo y puntos sobre sus relieves. Base anatómica con párpados, orejas y cuello conectados; globos oculares con volumen, aún experimental: no es una reconstrucción exacta de las referencias y sus expresiones son deformaciones experimentales. La demostración de habla es simulada; la conversación combina tiempos por palabra cuando la voz los entrega y formas de labios estimadas dentro de cada palabra. V6 incorpora amortiguación física de los actuadores, visualización experimental de dientes y lengua y movimientos discretos relacionados con visemas; los tiempos medidos por carácter de ElevenLabs no constituyen alineación fonética exacta. Los músculos y la mandíbula no son aún simulaciones biomecánicas validadas.</p>
  </main>;
 }
