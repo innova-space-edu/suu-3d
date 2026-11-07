@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import ts from 'typescript';
 const js=ts.transpileModule(readFileSync('lib/lip-sync.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-const {wordTimings,estimatedWords,buildLipCues,lipPoseAt,VISEMES}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const {wordTimings,estimatedWords,buildLipCues,buildCharacterLipCues,lipCueAt,lipPoseAt,VISEMES}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 test('provider ticks become measured word windows and pauses close the mouth',()=>{
  const words=wordTimings([{text:'mamá',offset:1e7,duration:5e6},{text:'papá',offset:2e7,duration:5e6}]);
  assert.equal(words[0].start,1);assert.equal(words[0].end,1.5);
@@ -18,4 +18,21 @@ test('estimated fallback stays inside actual duration and malformed timing is ig
  assert.ok(words.length===4&&cues.length>0);assert.ok(cues.every(c=>c.start>=0&&c.end<=3.000001));
  assert.deepEqual(buildLipCues([{text:'bad',start:1,end:0}]),[]);
  assert.deepEqual(estimatedWords('hola',NaN),[]);assert.equal(lipPoseAt(cues,Infinity).jaw,0);
+});
+
+test("measured character alignment wins over estimated word subdivisions",()=>{
+ const chars=[
+  {text:"m",start:0,end:.10},
+  {text:"a",start:.10,end:.37},
+  {text:" ",start:.37,end:.41},
+  {text:"o",start:.41,end:.72}
+ ];
+ const cues=buildCharacterLipCues(chars);
+ assert.equal(cues.length,3);
+ assert.equal(cues[0].shape,"MBP");
+ assert.equal(cues[1].shape,"A");
+ assert.equal(cues[2].shape,"O");
+ assert.equal(lipCueAt(cues,.4),undefined,"silence remains neutral");
+ assert.equal(lipCueAt(cues,.5)?.shape,"O");
+ assert.equal(lipPoseAt(cues,.4).jaw,0);
 });
