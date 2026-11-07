@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import ts from 'typescript';
 const js=ts.transpileModule(readFileSync('lib/lip-sync.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
-const {wordTimings,estimatedWords,buildLipCues,buildCharacterLipCues,lipCueAt,lipPoseAt,VISEMES}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const {wordTimings,estimatedWords,buildLipCues,buildCharacterLipCues,buildPhonemeLipCues,phoneViseme,lipCueAt,lipPoseAt,VISEMES}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 test('provider ticks become measured word windows and pauses close the mouth',()=>{
  const words=wordTimings([{text:'mamá',offset:1e7,duration:5e6},{text:'papá',offset:2e7,duration:5e6}]);
  assert.equal(words[0].start,1);assert.equal(words[0].end,1.5);
@@ -35,4 +35,17 @@ test("measured character alignment wins over estimated word subdivisions",()=>{
  assert.equal(lipCueAt(cues,.4),undefined,"silence remains neutral");
  assert.equal(lipCueAt(cues,.5)?.shape,"O");
  assert.equal(lipPoseAt(cues,.4).jaw,0);
+});
+
+test("trusted acoustic phone timestamps override grapheme timing and retain silence",()=>{
+ const phonemes=[{phone:"m",start:0,end:.13},{phone:"a",start:.13,end:.31},{phone:"sil",start:.31,end:.42},{phone:"t",start:.42,end:.54},{phone:"o",start:.54,end:.75}];
+ const cues=buildPhonemeLipCues(phonemes);
+ assert.equal(cues.length,5);
+ assert.equal(cues[0].shape,"MBP");
+ assert.equal(cues[1].shape,"A");
+ assert.equal(cues[2].shape,"REST");
+ assert.equal(lipCueAt(cues,.60)?.phone,"o");
+ assert.equal(phoneViseme("ɾ"),"C");
+ assert.equal(phoneViseme("e"),"E");
+ assert.equal(lipPoseAt(cues,1).jaw,0);
 });
