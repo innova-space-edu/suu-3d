@@ -3,7 +3,7 @@ import {useFrame} from "@react-three/fiber";
 import {useRef} from "react";
 import * as THREE from "three";
 import type {LipSignal} from "@/hooks/useLipSync";
-import {currentLipShape} from "@/hooks/useLipSync";
+import {currentLipShape,currentLipPhone} from "@/hooks/useLipSync";
 import type {FaceDynamics} from "@/lib/face-physics";
 
 type Props={actuators:FaceDynamics;frontZ:number;enabled:boolean;lipSync?:LipSignal};
@@ -28,7 +28,8 @@ export function SuuOralCavity({actuators,frontZ,enabled,lipSync}:Props){
   lower.current.position.y=-opening;
   tongue.current.position.y=-opening*.70;
   const shape=currentLipShape(lipSync);
-  const raised=shape==="C"||shape==="I"||shape==="E";
+  const phone=currentLipPhone(lipSync).toLowerCase();
+  const raised=phone?/^[tdlnrszɾʎ]/u.test(phone):shape==="C"||shape==="I"||shape==="E";
   tongue.current.rotation.x=raised?-.26:.08;
   tongue.current.position.z=.012+(raised?.007:0);
   tongue.current.scale.x=(shape==="O"||shape==="U") ? 0.80 : 1;
