@@ -4,8 +4,9 @@ import {useRef} from "react";
 import * as THREE from "three";
 import type {LipSignal} from "@/hooks/useLipSync";
 import {currentLipShape} from "@/hooks/useLipSync";
+import type {FaceDynamics} from "@/lib/face-physics";
 
-type Props={actuators:import("@/lib/face-physics").FaceDynamics;frontZ:number;enabled:boolean;lipSync?:LipSignal};
+type Props={actuators:FaceDynamics;frontZ:number;enabled:boolean;lipSync?:LipSignal};
 const teeth=Array.from({length:8},(_,i)=>({
  x:(i-3.5)*.045,
  z:-.024-.022*Math.pow(Math.abs(i-3.5)/3.5,2),
@@ -30,7 +31,7 @@ export function SuuOralCavity({actuators,frontZ,enabled,lipSync}:Props){
   const raised=shape==="C"||shape==="I"||shape==="E";
   tongue.current.rotation.x=raised?-.26:.08;
   tongue.current.position.z=.012+(raised?.007:0);
-  tongue.current.scale.x=(shape==="O"||shape==="U")?.80:1;
+  tongue.current.scale.x=(shape==="O"||shape==="U") ? 0.80 : 1;
  });
  return <group ref={root} position={[0,-.545,frontZ]} visible={false}>
    <mesh ref={cavity} position={[0,-.01,0]}>
