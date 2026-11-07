@@ -108,10 +108,10 @@ export default function SuuConsole(){
     const r=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1800),voiceId:remoteId,language:speechLocale,timings:true})});
     if(!r.ok)throw new Error("Voz en línea no disponible");
     return readVoiceResponse(r);
-    });const {blob}=saved,words=saved.words as Awaited<ReturnType<typeof readVoiceResponse>>["words"],characters=(saved.characters||[]) as Awaited<ReturnType<typeof readVoiceResponse>>["characters"];
+    });const {blob}=saved,words=saved.words as Awaited<ReturnType<typeof readVoiceResponse>>["words"],characters=(saved.characters||[]) as Awaited<ReturnType<typeof readVoiceResponse>>["characters"],phonemes=(saved.phonemes||[]) as Awaited<ReturnType<typeof readVoiceResponse>>["phonemes"];
     if(ticket!==voiceGeneration.current)return;
     audioUrl.current=URL.createObjectURL(blob);const a=new Audio(audioUrl.current);audioRef.current=a;
-    lips.audio(a,text.slice(0,1800),words,characters);
+    lips.audio(a,text.slice(0,1800),words,characters,phonemes);
     a.onplay=()=>setSpeaking(true);a.onended=stopVoice;a.onerror=stopVoice;
     void meter.start(a);await a.play();return;
    }catch{if(ticket!==voiceGeneration.current)return;stopVoice();setNotice("Voz de red no disponible; se intentará una voz instalada.")}
