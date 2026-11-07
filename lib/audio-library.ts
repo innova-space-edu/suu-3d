@@ -1,5 +1,5 @@
 /** Persistent, bounded audio library. Only generated output, never microphone recordings. */
-export type LibraryClip={id:string;text:string;voice:string;language:string;category:string;created:number;blob:Blob;words:unknown[];characters?:unknown[]};
+export type LibraryClip={id:string;text:string;voice:string;language:string;category:string;created:number;blob:Blob;words:unknown[];characters?:unknown[];phonemes?:unknown[]};
 export type LibraryReply={id:string;reply:string;provider:string;created:number;parts?:string[]};
 const DB='suu-audio-library-v1',MAX_BYTES=160_000_000,MAX_ITEMS=500;
 let connection:Promise<IDBDatabase>|undefined;
@@ -15,12 +15,12 @@ export async function saveLibraryClip(clip:LibraryClip){
  const all=(await listLibraryClips()).filter(c=>c.id!==clip.id);if(all.length>=MAX_ITEMS||all.reduce((n,c)=>n+c.blob.size,0)+clip.blob.size>MAX_BYTES)throw new Error('Biblioteca llena: descarga y elimina algunos audios');
  await write('clips',clip);memory.delete(clip.id);
 }
-export async function cachedRecording(text:string,voice:string,language:string,category:string,signal:AbortSignal,generate:()=>Promise<{blob:Blob;words:unknown[];characters?:unknown[]}>){
+export async function cachedRecording(text:string,voice:string,language:string,category:string,signal:AbortSignal,generate:()=>Promise<{blob:Blob;words:unknown[];characters?:unknown[];phonemes?:unknown[]}>){
  const id=await libraryHash(['audio-v1',text,voice,language]);signal.throwIfAborted();
  let existing:LibraryClip|undefined;try{existing=await read<LibraryClip>('clips',id)}catch{}
  existing??=memory.get(id);
- if(existing?.blob instanceof Blob&&existing.blob.size>=100){return {blob:existing.blob,words:existing.words,characters:existing.characters??[],cached:true,persisted:!memory.has(id)}}
- const result=await generate();signal.throwIfAborted();const clip:LibraryClip={id,text,voice,language,category,created:Date.now(),blob:result.blob,words:result.words,characters:result.characters??[]};
+ if(existing?.blob instanceof Blob&&existing.blob.size>=100){return {blob:existing.blob,words:existing.words,characters:existing.characters??[],phonemes:existing.phonemes??[],cached:true,persisted:!memory.has(id)}}
+ const result=await generate();signal.throwIfAborted();const clip:LibraryClip={id,text,voice,language,category,created:Date.now(),blob:result.blob,words:result.words,characters:result.characters??[],phonemes:result.phonemes??[]};
  let persisted=true;try{await saveLibraryClip(clip)}catch{persisted=false;while(memory.size>=20)memory.delete(memory.keys().next().value!);memory.set(id,clip)}
  void sharedEnabled().then(enabled=>enabled?archiveLibraryClip(clip):undefined).catch(()=>{});
  return {...result,cached:false,persisted};
