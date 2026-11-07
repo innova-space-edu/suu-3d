@@ -103,7 +103,7 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
      const res=await fetch("/api/voice",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text:text.slice(0,1900),voiceId:remoteId,language:speechLocale,mode:fairMode?"fair":undefined,timings:true}),signal:voiceCtl.signal});
      if(!res.ok)throw new Error("No hay motor de voz en línea");
      return readVoiceResponse(res);
-     });recording={blob:saved.blob,words:saved.words as Awaited<ReturnType<typeof readVoiceResponse>>["words"]};
+     });recording={blob:saved.blob,words:saved.words as Awaited<ReturnType<typeof readVoiceResponse>>["words"],characters:(saved.characters||[]) as Awaited<ReturnType<typeof readVoiceResponse>>["characters"],phonemes:(saved.phonemes||[]) as Awaited<ReturnType<typeof readVoiceResponse>>["phonemes"]};
      if(fairMode&&recording.blob.size<=8000000){
       while(fairAudioCache.size&&(fairAudioBytes+recording.blob.size>24000000||fairAudioCache.size>=60)){
        const oldest=fairAudioCache.keys().next().value!;fairAudioBytes-=fairAudioCache.get(oldest)!.blob.size;fairAudioCache.delete(oldest);
@@ -114,7 +114,7 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
     const {blob,words}=recording;
     if(stopSignal.current||ticket!==speechGeneration.current)return;
     audioUrl.current=URL.createObjectURL(blob);const player=new Audio(audioUrl.current);audio.current=player;
-    lips.audio(player,text.slice(0,1900),words);
+    lips.audio(player,text.slice(0,1900),words,recording.characters,recording.phonemes);
     player.onended=()=>finishSpeech();player.onerror=()=>finishSpeech(false);
     void meter.start(player);await player.play();return;
    }catch{if(ticket!==speechGeneration.current)return;releaseAudio()}
@@ -232,7 +232,7 @@ export default function SuuVoiceMode({modePicker,microphonePreferences={},brief=
  const toggle=()=>{if(announcing.current){stop();announcing.current=false;endRef.current?.(false);return}if(phaseRef.current!=="idle"&&phaseRef.current!=="error"){stop();return}stopSignal.current=false;void listen()};
  return <div className="voiceOnlyOverlay" role="dialog" aria-label="Modo conversación de voz con SUU" aria-modal="true">
   <header className="voiceHeader">{modePicker}<div><b>SUU</b><span>{modeLabel||(fairMode?"EXPO CIENCIAS 2026":"CONVERSACIÓN SOLO VOZ")} · {provider||"LISTA"}</span></div><button onClick={()=>{stop();onClose()}} aria-label="Cerrar modo voz"><X size={25}/></button></header>
-  <div className="voiceScene"><Avatar lipSync={lips.signal} speaking={phase==="speaking"} listening={phase==="listening"} energy={energy} quality={quality} solid={solid} tracking={tracking} cameraActive={cameraActive}/></div>
+  <div className="voiceScene"><Avatar lipSync={lips.signal} expressionText={subtitle} speaking={phase==="speaking"} listening={phase==="listening"} energy={energy} quality={quality} solid={solid} tracking={tracking} cameraActive={cameraActive}/></div>
   <div className="voiceBottom"><div className={"voiceStatus "+phase}><AudioLines size={19}/><span>{phase==="listening"?"ESCUCHANDO":phase==="thinking"?"PENSANDO":phase==="speaking"?"HABLANDO":phase==="error"?"REINTENTAR":"EN ESPERA"}</span></div>
    <p ref={caption} aria-live="polite" tabIndex={0} aria-label="Respuesta de SUU">{subtitle}</p>
    <div className="voiceControls"><button className="voiceRound" disabled={fairMode&&enabled===false} onClick={toggle} title={phase==="idle"||phase==="error"?"Iniciar voz":"Pausar voz"}>{phase==="idle"||phase==="error"?<Mic size={27}/>:<MicOff size={27}/>}</button><button className="voiceSmall" onClick={()=>setMuted(v=>!v)} title={muted?"Activar audio":"Silenciar audio"}>{muted?<VolumeX size={20}/>:<Volume2 size={20}/>}</button><button className="voiceSmall" onClick={()=>{stop();onClose()}}>Salir</button></div>

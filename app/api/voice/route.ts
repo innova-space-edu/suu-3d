@@ -5,6 +5,7 @@ import {authorized,originAllowed,throttle,clientIdentity} from "@/lib/security";
 import {DEFAULT_VOICE_ID,knownVoice,voiceCatalog} from "@/lib/voice-catalog";
 import {spokenText,fairSpokenText} from "@/lib/speech-text";
 import {wordTimings} from "@/lib/lip-sync";
+import {alignSpeechPhones} from "@/lib/phoneme-aligner";
 export const runtime="nodejs";export const maxDuration=60;
 export async function GET(){
  if(!await authorized())return NextResponse.json({error:"Acceso requerido"},{status:401});
@@ -15,18 +16,34 @@ async function synthesizeEdge(text:string,id:string){
  await tts.synthesize(text,id,{outputFormat:Constants.OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3,rate:"-2%",pitch:"+0Hz",volume:"100%"});
  const audio=tts.toBuffer();
  if(audio.length<200||audio.length>8000000)throw new Error("Respuesta de audio inválida");
- return {audio:new Uint8Array(audio),words:wordTimings(tts.getWordBoundaries())};
+ return {audio:new Uint8Array(audio),words:wordTimings(tts.getWordBoundaries()),characters:[] as {text:string;start:number;end:number}[]};
 }
-async function synthesizePremium(text:string){
+async function synthesizePremium(text:string,withTimings:boolean){
  const key=process.env.ELEVENLABS_API_KEY,voice=process.env.ELEVENLABS_VOICE_ID;
  if(!key||!voice)throw new Error("ElevenLabs no está configurado");
  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),19000);
  try{
-  const res=await fetch("https://api.elevenlabs.io/v1/text-to-speech/"+encodeURIComponent(voice),{method:"POST",signal:ctl.signal,cache:"no-store",headers:{"xi-api-key":key,"Content-Type":"application/json","Accept":"audio/mpeg"},body:JSON.stringify({text,model_id:"eleven_multilingual_v2"})});
+  const endpoint="https://api.elevenlabs.io/v1/text-to-speech/"+encodeURIComponent(voice)+(withTimings?"/with-timestamps":"");
+  const res=await fetch(endpoint,{method:"POST",signal:ctl.signal,cache:"no-store",headers:{"xi-api-key":key,"Content-Type":"application/json","Accept":withTimings?"application/json":"audio/mpeg"},body:JSON.stringify({text,model_id:"eleven_multilingual_v2"})});
   if(!res.ok)throw new Error("ElevenLabs HTTP "+res.status);
-  const bytes=new Uint8Array(await res.arrayBuffer());
-  if(bytes.length<200||bytes.length>8000000)throw new Error("Audio inválido");
-  return {audio:bytes,words:[]};
+  if(!withTimings){
+   const audio=new Uint8Array(await res.arrayBuffer());
+   if(audio.length<200||audio.length>8000000)throw new Error("Audio inválido");
+   return {audio,words:[],characters:[] as {text:string;start:number;end:number}[]};
+  }
+  const data=await res.json(),base64=String(data.audio_base64||"");
+  if(!base64||base64.length>11000000||!/^[A-Za-z0-9+/=]+$/.test(base64))throw new Error("Audio con tiempos inválido");
+  const audio=new Uint8Array(Buffer.from(base64,"base64"));
+  if(audio.length<200||audio.length>8000000)throw new Error("Audio inválido");
+  const alignment=data.alignment||data.normalized_alignment;
+  const characters:{text:string;start:number;end:number}[]=[];
+  if(alignment&&Array.isArray(alignment.characters)&&Array.isArray(alignment.character_start_times_seconds)&&Array.isArray(alignment.character_end_times_seconds)){
+   for(let i=0;i<Math.min(2400,alignment.characters.length);i++){
+    const letter=alignment.characters[i],start=alignment.character_start_times_seconds[i],end=alignment.character_end_times_seconds[i];
+    if(typeof letter==="string"&&letter.length<=3&&Number.isFinite(start)&&Number.isFinite(end)&&start>=0&&end>start&&end<180)characters.push({text:letter,start,end});
+   }
+  }
+  return {audio,words:[],characters};
  }finally{clearTimeout(timer)}
 }
 export async function POST(req:NextRequest){
@@ -41,7 +58,7 @@ export async function POST(req:NextRequest){
  text=(fairMode?fairSpokenText:spokenText)(text,knownVoice(voiceId)?.locale||language);
  if(extraVoiceCatalog().some(v=>v.id===voiceId)){
   try{const result=await extraTTS(text,voiceId,language,req.signal);if(result.audio.length<100||result.audio.length>3_000_000)throw new Error("Audio inválido");
-   if(timings)return NextResponse.json({audio:result.audio.toString("base64"),words:[],mime:result.type,provider:result.provider},{headers:{"Cache-Control":"private, no-store"}});
+   if(timings)return NextResponse.json({audio:result.audio.toString("base64"),words:[],characters:[],mime:result.type,provider:result.provider},{headers:{"Cache-Control":"private, no-store"}});
    return new Response(new Uint8Array(result.audio),{headers:{"Content-Type":result.type,"Cache-Control":"private, no-store","X-Suu-Voice-Provider":result.provider}});
   }catch(e){return NextResponse.json({error:e instanceof Error?e.message:"Voz no disponible"},{status:503})}
  }
@@ -50,8 +67,11 @@ export async function POST(req:NextRequest){
  for(const provider of pipeline){
   try{
    if(provider==="premium"&&!(process.env.ELEVENLABS_API_KEY&&process.env.ELEVENLABS_VOICE_ID))continue;
-   const result=provider==="edge"?await synthesizeEdge(text,knownVoice(voiceId)?voiceId:DEFAULT_VOICE_ID):await synthesizePremium(text);
-   if(timings)return NextResponse.json({audio:Buffer.from(result.audio).toString("base64"),words:result.words,provider,sync:result.words.length?"word-timed-letter-estimate":"estimated"},{headers:{"Cache-Control":"private, no-store"}});
+   const result=provider==="edge"?await synthesizeEdge(text,knownVoice(voiceId)?voiceId:DEFAULT_VOICE_ID):await synthesizePremium(text,timings);
+   if(timings){
+    const phonemes=await alignSpeechPhones(result.audio,text,knownVoice(voiceId)?.locale||language);
+    return NextResponse.json({audio:Buffer.from(result.audio).toString("base64"),words:result.words,characters:result.characters,phonemes,provider,sync:phonemes.length?"acoustically-aligned-phonemes":result.characters.length?"character-timed-visemes":result.words.length?"word-timed-letter-estimate":"estimated"},{headers:{"Cache-Control":"private, no-store"}});
+   }
    return new NextResponse(Buffer.from(result.audio),{headers:{"Content-Type":"audio/mpeg","Cache-Control":"private, no-store","X-Suu-Voice-Provider":provider,"X-Suu-Voice-Id":provider==="edge"?(knownVoice(voiceId)?voiceId:DEFAULT_VOICE_ID):"elevenlabs:default"}});
   }catch(e){console.warn("[SUU voice fallback]",provider,e instanceof Error?e.name:"error")}
  }

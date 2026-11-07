@@ -5,6 +5,8 @@ import * as THREE from "three";
 import {loadFaceGeometry,type FaceGeometryBundle,type FaceView,type PointCount,type CleanMode} from "@/lib/face-v4-geometry";
 import {makeCleanPointMaterial} from "@/lib/face-point-shader";
 import {FACE_CHANNELS,poseWeights,type FacePose} from "@/lib/face-rig";
+import {advanceFaceDynamics,faceDynamicsWeights,makeFaceDynamics} from "@/lib/face-physics";
+import {SuuOralCavity} from "./SuuOralCavity";
 import {currentLipPose,type LipSignal} from "@/hooks/useLipSync";
 type Controls={lipSync?:LipSignal;demoSpeech?:boolean;pose?:FacePose;speaking?:boolean;listening?:boolean;energy?:number;gaze?:{x:number;y:number};autoBlink?:boolean;manageCamera?:boolean;viewRevision:number;view:FaceView;count:PointCount;mode:CleanMode;size:number;brightness:number;contrast:number;onProgress:(count:number)=>void;onError:(message:string)=>void};
 export class ViewerBoundary extends Component<{children:ReactNode},{failed:boolean}>{
@@ -15,8 +17,10 @@ export class ViewerBoundary extends Component<{children:ReactNode},{failed:boole
 export function AnatomicalHead({lipSync,demoSpeech=false,pose={},speaking=false,listening=false,energy=0,gaze,autoBlink=true,manageCamera=true,viewRevision,view,count,mode,size,brightness,contrast,onProgress,onError}:Controls){
  const [geometry,setGeometry]=useState<FaceGeometryBundle|null>(null);
  const [received,setReceived]=useState(0);
+ const [mouthFront,setMouthFront]=useState(.88);
  const root=useRef<THREE.Group>(null);
  const weights=useRef(new Array(FACE_CHANNELS.length).fill(0));
+ const physics=useRef(makeFaceDynamics());
  useFrame(({clock},dt)=>{
   const t=clock.elapsedTime,phase=t%4.7;
   const blink=autoBlink&&phase>4.45?Math.sin((phase-4.45)/.25*Math.PI):0;
@@ -29,10 +33,8 @@ export function AnatomicalHead({lipSync,demoSpeech=false,pose={},speaking=false,
    browUp:driven.browUp??(listening?.12:0),
    lookLeft:driven.lookLeft??Math.max(0,-(gaze?.x||0)),lookRight:driven.lookRight??Math.max(0,gaze?.x||0),
    lookUp:driven.lookUp??Math.max(0,gaze?.y||0),lookDown:driven.lookDown??Math.max(0,-(gaze?.y||0))});
-  for(let i=0;i<target.length;i++){
-   const speed=i===0?(target[i]<weights.current[i]?45:38):i===3||i===4?35:i===5||i===6?30:7;
-   weights.current[i]+=(target[i]-weights.current[i])*(1-Math.exp(-Math.min(dt,.1)*speed));
-  }
+  advanceFaceDynamics(physics.current,Object.fromEntries(FACE_CHANNELS.map((key,i)=>[key,target[i]])) as FacePose,dt);
+  weights.current=faceDynamicsWeights(physics.current);
   root.current?.traverse(o=>{if(o instanceof THREE.Mesh||o instanceof THREE.Points){if(o.morphTargetInfluences)for(let i=0;i<target.length;i++)o.morphTargetInfluences[i]=weights.current[i]}});
  });
  const {camera,gl}=useThree();
@@ -50,6 +52,9 @@ export function AnatomicalHead({lipSync,demoSpeech=false,pose={},speaking=false,
     if(typeof Worker==="undefined")throw new Error("Este navegador no admite el generador de puntos.");
     bundle=await loadFaceGeometry(abort.signal);
     if(abort.signal.aborted){bundle.dispose();return}
+    const positions=bundle.surface.getAttribute("position");let surfaceZ=-Infinity;
+    for(let i=0;i<positions.count;i++)if(Math.abs(positions.getX(i))<.11&&Math.abs(positions.getY(i)+.545)<.085&&positions.getZ(i)>.2)surfaceZ=Math.max(surfaceZ,positions.getZ(i));
+    setMouthFront(Number.isFinite(surfaceZ)?surfaceZ+.006:.88);
     setGeometry(bundle);
     worker=new Worker("/face-v4-worker.js");
     worker.onmessage=({data:m})=>{
@@ -87,6 +92,7 @@ export function AnatomicalHead({lipSync,demoSpeech=false,pose={},speaking=false,
  },[pointMaterial,size,brightness,contrast,mode,gl]);
  if(!geometry)return null;
  return <group ref={root} dispose={null}>
+  <SuuOralCavity actuators={physics.current} frontZ={mouthFront} enabled={mode!=="puntos"} lipSync={lipSync}/>
   {mode==="puntos"&&<mesh args={[geometry.surface]} renderOrder={-10}>
    <meshBasicMaterial colorWrite={false} depthWrite={true} depthTest={true} side={THREE.FrontSide}/>
   </mesh>}

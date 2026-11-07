@@ -1,28 +1,40 @@
 "use client";
 import {useCallback,useEffect,useRef} from "react";
-import {buildLipCues,estimatedWords,lipPoseAt,type LipCue,type SpeechWord} from "@/lib/lip-sync";
+import {buildLipCues,buildCharacterLipCues,buildPhonemeLipCues,estimatedWords,lipCueAt,lipPoseAt,type LipCue,type SpeechWord,type SpeechCharacter,type SpeechPhone} from "@/lib/lip-sync";
 import type {FacePose} from "@/lib/face-rig";
-export type LipPlayback={audio?:HTMLAudioElement;cues:LipCue[];clock?:number;paused?:boolean;kind:"word"|"estimated"|"browser"};
+export type LipPlayback={audio?:HTMLAudioElement;cues:LipCue[];clock?:number;paused?:boolean;kind:"phoneme"|"character"|"word"|"estimated"|"browser"};
 export type LipSignal={current:LipPlayback|null};
 export function currentLipPose(signal?:LipSignal):FacePose|undefined{
  const p=signal?.current;if(!p)return undefined;
  if(p.paused||p.audio&&(p.audio.paused||p.audio.ended))return {jaw:0,pucker:0,wide:0,browUp:0};
  return lipPoseAt(p.cues,p.audio?p.audio.currentTime:(performance.now()-(p.clock||0))/1000);
 }
-export async function readVoiceResponse(response:Response):Promise<{blob:Blob;words:SpeechWord[]}>{
- if(!response.headers.get("content-type")?.includes("application/json"))return {blob:await response.blob(),words:[]};
+export function currentLipShape(signal?:LipSignal):string{
+ const p=signal?.current;if(!p||p.paused||p.audio&&(p.audio.paused||p.audio.ended))return "REST";
+ const time=p.audio?p.audio.currentTime:(performance.now()-(p.clock||0))/1000;
+ return lipCueAt(p.cues,time)?.shape??"REST";
+}
+export function currentLipPhone(signal?:LipSignal):string{
+ const p=signal?.current;if(!p||p.paused||p.audio&&(p.audio.paused||p.audio.ended))return "";
+ const time=p.audio?p.audio.currentTime:(performance.now()-(p.clock||0))/1000;
+ return lipCueAt(p.cues,time)?.phone||"";
+}
+export async function readVoiceResponse(response:Response):Promise<{blob:Blob;words:SpeechWord[];characters:SpeechCharacter[];phonemes:SpeechPhone[]}>{
+ if(!response.headers.get("content-type")?.includes("application/json"))return {blob:await response.blob(),words:[],characters:[],phonemes:[]};
  const data=await response.json();
  if(typeof data.audio!=="string"||data.audio.length>12000000)throw new Error("Audio inválido");
  const raw=atob(data.audio),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
  const words=Array.isArray(data.words)?data.words.filter((w:SpeechWord)=>w&&typeof w.text==="string"&&Number.isFinite(w.start)&&Number.isFinite(w.end)&&w.start>=0&&w.end>w.start).slice(0,1200):[];
- return {blob:new Blob([bytes],{type:data.mime==="audio/wav"?"audio/wav":"audio/mpeg"}),words};
+ const characters:SpeechCharacter[]=Array.isArray(data.characters)?data.characters.filter((ch:SpeechCharacter)=>ch&&typeof ch.text==="string"&&ch.text.length<=3&&Number.isFinite(ch.start)&&Number.isFinite(ch.end)&&ch.start>=0&&ch.end>ch.start&&ch.end<180).slice(0,2400):[];
+ const phonemes:SpeechPhone[]=Array.isArray(data.phonemes)?data.phonemes.filter((p:SpeechPhone)=>p&&typeof p.phone==="string"&&p.phone.length<=16&&Number.isFinite(p.start)&&Number.isFinite(p.end)&&p.start>=0&&p.end>p.start&&p.end<180).slice(0,2400):[];
+ return {blob:new Blob([bytes],{type:data.mime==="audio/wav"?"audio/wav":"audio/mpeg"}),words,characters,phonemes};
 }
 export function useLipSync(){
  const signal=useRef<LipPlayback|null>(null),release=useRef<()=>void>(()=>{});
  const stop=useCallback(()=>{release.current();release.current=()=>{};signal.current=null},[]);
- const audio=useCallback((player:HTMLAudioElement,text:string,words:SpeechWord[])=>{
-  stop();const playback:LipPlayback={audio:player,cues:buildLipCues(words),kind:words.length?"word":"estimated"};signal.current=playback;
-  const metadata=()=>{if(signal.current===playback&&!words.length)playback.cues=buildLipCues(estimatedWords(text,player.duration))};
+ const audio=useCallback((player:HTMLAudioElement,text:string,words:SpeechWord[],characters:SpeechCharacter[]=[],phonemes:SpeechPhone[]=[])=>{
+  stop();const playback:LipPlayback={audio:player,cues:phonemes.length?buildPhonemeLipCues(phonemes):characters.length?buildCharacterLipCues(characters):buildLipCues(words),kind:phonemes.length?"phoneme":characters.length?"character":words.length?"word":"estimated"};signal.current=playback;
+  const metadata=()=>{if(signal.current===playback&&!words.length&&!characters.length&&!phonemes.length)playback.cues=buildLipCues(estimatedWords(text,player.duration))};
   player.addEventListener("loadedmetadata",metadata);if(player.readyState)metadata();
   release.current=()=>player.removeEventListener("loadedmetadata",metadata);
  },[stop]);

@@ -1,15 +1,17 @@
 "use client";
 import {Canvas,useFrame,useThree} from "@react-three/fiber";
 import {OrbitControls} from "@react-three/drei";
-import {useEffect,useRef,useState} from "react";
+import {useEffect,useMemo,useRef,useState} from "react";
+import {emotionForSpeech} from "@/lib/face-emotion";
 import * as THREE from "three";
 import type {LipSignal} from "@/hooks/useLipSync";
 import type {FaceMotion} from "@/hooks/useSuuFaceTracking";
 import {AnatomicalHead,ViewerBoundary} from "./SuuAnatomicalHead";
-type Props={lipSync?:LipSignal;speaking:boolean;listening:boolean;energy:number;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive?:boolean};
-function Scene({lipSync,speaking,listening,energy,quality,solid,tracking,cameraActive,onProgress,onError}:Props&{onProgress:(n:number)=>void;onError:(s:string)=>void}){
+type Props={lipSync?:LipSignal;speaking:boolean;listening:boolean;energy:number;quality:"eco"|"high";solid:boolean;tracking?:FaceMotion;cameraActive?:boolean;expressionText?:string};
+function Scene({lipSync,speaking,listening,energy,quality,solid,tracking,cameraActive,expressionText,onProgress,onError}:Props&{onProgress:(n:number)=>void;onError:(s:string)=>void}){
  const head=useRef<THREE.Group>(null);
  const {camera,size}=useThree();
+ const autonomousExpression=useMemo(()=>speaking?emotionForSpeech(expressionText||"").pose:{},[speaking,expressionText]);
  useEffect(()=>{
   // Fit the same anatomical bust in both the chat column and full-screen voice view.
   const aspect=size.width/Math.max(1,size.height);
@@ -33,7 +35,7 @@ function Scene({lipSync,speaking,listening,energy,quality,solid,tracking,cameraA
   <directionalLight position={[1,3,4]} intensity={1.8*brightness}/>
   <directionalLight position={[-3,1,3]} intensity={.75*brightness}/>
   <group ref={head}>
-   <AnatomicalHead lipSync={lipSync} speaking={speaking} listening={listening} energy={energy} gaze={cameraActive&&tracking?{x:tracking.gazeX,y:tracking.gazeY}:undefined} manageCamera={false} viewRevision={0} view="frente" count={quality==="high"?100000:25000} mode={solid?"superficie":"contornos"} size={1} brightness={brightness} contrast={.72} onProgress={onProgress} onError={onError}/>
+   <AnatomicalHead lipSync={lipSync} pose={autonomousExpression} speaking={speaking} listening={listening} energy={energy} gaze={cameraActive&&tracking?{x:tracking.gazeX,y:tracking.gazeY}:undefined} manageCamera={false} viewRevision={0} view="frente" count={quality==="high"?100000:25000} mode={solid?"superficie":"contornos"} size={1} brightness={brightness} contrast={.72} onProgress={onProgress} onError={onError}/>
   </group>
   <OrbitControls target={[0,-.15,0]} enablePan={false} enableDamping minDistance={3.1} maxDistance={14}/>
  </>;

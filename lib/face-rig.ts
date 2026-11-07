@@ -27,7 +27,10 @@ export function facialDelta(channel:FaceChannel,x:number,y:number,z:number,eyeba
    const seam=-.548+.030*Math.min(1,(x/.25)**2),width=.018+.15*smooth(.19,.48,ax);
    const lower=(1-smooth(seam-width,seam+width,y))*smooth(-1.22,-.86,y)*(1-smooth(.48,.78,ax))*smooth(.12,.65,z);
    const a=.22*lower,dy=y+.25,dz=z-.38;
-   return [0,dy*Math.cos(a)-dz*Math.sin(a)-dy,dy*Math.sin(a)+dz*Math.cos(a)-dz];
+   // Condylar glide accompanies the approximate hinge rotation; both are bounded
+   // by the existing lower-jaw mask. This is kinematic, not a calibrated TMJ.
+   const glide=.014*lower*lower;
+   return [0,dy*Math.cos(a)-dz*Math.sin(a)-dy-.006*lower,dy*Math.sin(a)+dz*Math.cos(a)-dz+glide];
   }
   case "smile":{
    const cheek=(g(x-.38,.15)+g(x+.38,.15))*g(y+.31,.16)*front;
