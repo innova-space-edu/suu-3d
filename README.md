@@ -24,7 +24,7 @@ Todas las claves viven en el servidor; sesión firmada en cookie HTTP-only; vali
 
 ## Modelo 3D
 
-La página principal, el modo de voz y `/face-lab` comparten el rostro anatómico SUU V5 (`public/models/suu-face-anatomical.glb`, base MakeHuman CC0). Se muestran 100.000 puntos en calidad alta y 25.000 en modo económico, con brillo uniforme y una superficie de apoyo. No requiere API ni GPU de servidor. Conserva seguimiento de orientación de cabeza y reacción luminosa al audio; incluye un rig inicial de nueve controles, parpadeo y apertura de boca por amplitud del audio. La alineación precisa de labios por fonemas queda pendiente. La procedencia y licencia están documentadas en `docs/FACE_LAB.md`.
+La página principal, el modo de voz y `/face-lab` comparten el rostro anatómico SUU V5 (`public/models/suu-face-anatomical.glb`, base MakeHuman CC0). Se muestran 100.000 puntos en calidad alta y 25.000 en modo económico, con brillo uniforme y una superficie de apoyo. No requiere API ni GPU de servidor. Conserva seguimiento de orientación de cabeza y reacción luminosa al audio; incorpora 13 canales faciales con actuadores de masa-resorte amortiguados, parpadeo, mirada, sonrisa, gestos y articulación experimental de dientes y lengua. La animación utiliza ventanas de palabras, tiempos medidos por carácter cuando la voz lo permite y fonemas acústicos si se conecta un servicio privado MFA. Sin el alineador, la alineación fonética continúa siendo aproximada. La procedencia y licencia están documentadas en `docs/FACE_LAB.md`.
 
 ## Límite actual
 
@@ -81,3 +81,14 @@ La base `lib/fair-knowledge.ts` incorpora las 50 preguntas y respuestas aportada
 La voz inicial es Dalia (`es-MX-DaliaNeural`), voz femenina de EDUAI. Las voces del dispositivo siguen seleccionables como respaldo sin llamadas a `/api/voice`. La animación de labios conserva los eventos de palabra y la estimación de respaldo.
 
 En ambas modalidades de feria, SUU responde en el navegador con las 50 preguntas y sus variantes, las fichas y las respuestas preparadas, sin llamar a `/api/chat` ni a modelos generativos. Las consultas desconocidas reciben una invitación a precisar un tema del catálogo. El endpoint de chat aplica la misma regla para solicitudes con `mode:fair`. La conversación fuera del modo feria conserva los proveedores IA. El audio de Dalia requiere síntesis la primera vez y después se reutiliza en la pestaña para el mismo texto, voz e idioma; cambiar de voz o recargar exige nueva síntesis.
+
+## SUU V6 — animación facial y sincronía experimental
+
+- Dinámica de actuadores faciales con amortiguación y restricciones, **no** biomecánica de músculos validada.
+- Modelo dental y lengua de bajo coste geométrico vinculados a mandíbula y visemas; aún requieren ajuste visual al rostro.
+- Expresiones autónomas discretas basadas en el texto de SUU, con estado neutro y sin copiar gestos del visitante.
+- Sincronización priorizada: fonemas acústicos del servicio privado MFA (si está instalado) → caracteres con tiempos de ElevenLabs → palabras con tiempos de Edge TTS → estimación local/navegador.
+- Instalación del alineador y requisitos de seguridad: [deploy/dell-phonemes/README.md](deploy/dell-phonemes/README.md).
+- Evolución anatómica y validación pendiente: [docs/FACE_LAB.md](docs/FACE_LAB.md).
+
+El sistema no presenta resultados de exactitud biomecánica o fonética medidos en un banco experimental. No interpretes los controles de animación como músculos reales ni las estimaciones visuales como articulación fisiológica exacta.
