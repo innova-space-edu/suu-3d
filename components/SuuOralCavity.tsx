@@ -5,7 +5,7 @@ import * as THREE from "three";
 import type {LipSignal} from "@/hooks/useLipSync";
 import {currentLipShape} from "@/hooks/useLipSync";
 
-type Props={actuators:{current:Float64Array};frontZ:number;enabled:boolean;lipSync?:LipSignal};
+type Props={actuators:import("@/lib/face-physics").FaceDynamics;frontZ:number;enabled:boolean;lipSync?:LipSignal};
 const teeth=Array.from({length:8},(_,i)=>({
  x:(i-3.5)*.045,
  z:-.024-.022*Math.pow(Math.abs(i-3.5)/3.5,2),
@@ -18,7 +18,7 @@ export function SuuOralCavity({actuators,frontZ,enabled,lipSync}:Props){
  const root=useRef<THREE.Group>(null),cavity=useRef<THREE.Mesh>(null);
  const lower=useRef<THREE.Group>(null),tongue=useRef<THREE.Group>(null);
  useFrame(()=>{
-  const jaw=Math.max(0,Math.min(1,actuators.current[0]||0));
+  const jaw=Math.max(0,Math.min(1,actuators.value[0]||0));
   if(!root.current||!cavity.current||!lower.current||!tongue.current)return;
   const opening=Math.max(0,(jaw-.12)*.145);
   root.current.visible=enabled&&opening>.015;
@@ -30,7 +30,7 @@ export function SuuOralCavity({actuators,frontZ,enabled,lipSync}:Props){
   const raised=shape==="C"||shape==="I"||shape==="E";
   tongue.current.rotation.x=raised?-.26:.08;
   tongue.current.position.z=.012+(raised?.007:0);
-  tongue.current.scale.x=shape==="O"||shape==="U"?.80:1;
+  tongue.current.scale.x=(shape==="O"||shape==="U")?.80:1;
  });
  return <group ref={root} position={[0,-.545,frontZ]} visible={false}>
    <mesh ref={cavity} position={[0,-.01,0]}>
@@ -38,9 +38,9 @@ export function SuuOralCavity({actuators,frontZ,enabled,lipSync}:Props){
     <meshStandardMaterial color="#081526" roughness={.93} side={THREE.DoubleSide}/>
    </mesh>
    <group position={[0,.012,.014]}>
-    {teeth.map((tooth,i)=><mesh key={"upper-"+i} position={[tooth.x,0,tooth.z]}>
-      <sphereGeometry args={[1,12,8]}/><meshStandardMaterial color="#d0e1ed" roughness={.46}/>
-    </mesh>).map((el,i)=><group key={"u-"+i} scale={[teeth[i].width,.018,.019]}>{el}</group>)}
+    {teeth.map((tooth,i)=><group key={"u-"+i} position={[tooth.x,0,tooth.z]} scale={[tooth.width,.018,.019]}>
+      <mesh><sphereGeometry args={[1,12,8]}/><meshStandardMaterial color="#d0e1ed" roughness={.46}/></mesh>
+    </group>)}
    </group>
    <group ref={lower} position={[0,0,.012]}>
     {teeth.map((tooth,i)=><group key={"l-"+i} position={[tooth.x,-.014,tooth.z]} scale={[tooth.width,.017,.019]}>
