@@ -5,6 +5,7 @@ import {authorized,originAllowed,throttle,clientIdentity} from "@/lib/security";
 import {DEFAULT_VOICE_ID,knownVoice,voiceCatalog} from "@/lib/voice-catalog";
 import {spokenText,fairSpokenText} from "@/lib/speech-text";
 import {wordTimings} from "@/lib/lip-sync";
+import {alignSpeechPhones} from "@/lib/phoneme-aligner";
 export const runtime="nodejs";export const maxDuration=60;
 export async function GET(){
  if(!await authorized())return NextResponse.json({error:"Acceso requerido"},{status:401});
@@ -67,7 +68,10 @@ export async function POST(req:NextRequest){
   try{
    if(provider==="premium"&&!(process.env.ELEVENLABS_API_KEY&&process.env.ELEVENLABS_VOICE_ID))continue;
    const result=provider==="edge"?await synthesizeEdge(text,knownVoice(voiceId)?voiceId:DEFAULT_VOICE_ID):await synthesizePremium(text,timings);
-   if(timings)return NextResponse.json({audio:Buffer.from(result.audio).toString("base64"),words:result.words,characters:result.characters,provider,sync:result.characters.length?"character-timed-visemes":result.words.length?"word-timed-letter-estimate":"estimated"},{headers:{"Cache-Control":"private, no-store"}});
+   if(timings){
+    const phonemes=await alignSpeechPhones(result.audio,text,knownVoice(voiceId)?.locale||language);
+    return NextResponse.json({audio:Buffer.from(result.audio).toString("base64"),words:result.words,characters:result.characters,phonemes,provider,sync:phonemes.length?"acoustically-aligned-phonemes":result.characters.length?"character-timed-visemes":result.words.length?"word-timed-letter-estimate":"estimated"},{headers:{"Cache-Control":"private, no-store"}});
+   }
    return new NextResponse(Buffer.from(result.audio),{headers:{"Content-Type":"audio/mpeg","Cache-Control":"private, no-store","X-Suu-Voice-Provider":provider,"X-Suu-Voice-Id":provider==="edge"?(knownVoice(voiceId)?voiceId:DEFAULT_VOICE_ID):"elevenlabs:default"}});
   }catch(e){console.warn("[SUU voice fallback]",provider,e instanceof Error?e.name:"error")}
  }
