@@ -16,7 +16,7 @@ export async function saveLibraryClip(clip:LibraryClip){
  await write('clips',clip);memory.delete(clip.id);
 }
 export async function cachedRecording(text:string,voice:string,language:string,category:string,signal:AbortSignal,generate:()=>Promise<{blob:Blob;words:unknown[];characters?:unknown[];phonemes?:unknown[]}>){
- const id=await libraryHash(['audio-v1',text,voice,language]);signal.throwIfAborted();
+ const id=await libraryHash(['audio-v2-phonemes',text,voice,language]);signal.throwIfAborted();
  let existing:LibraryClip|undefined;try{existing=await read<LibraryClip>('clips',id)}catch{}
  existing??=memory.get(id);
  if(existing?.blob instanceof Blob&&existing.blob.size>=100){return {blob:existing.blob,words:existing.words,characters:existing.characters??[],phonemes:existing.phonemes??[],cached:true,persisted:!memory.has(id)}}
