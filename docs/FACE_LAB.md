@@ -61,3 +61,17 @@ Voices without alignment use a duration-scaled estimate; browser synthesis uses 
 Increase jaw opening and vowel targets, with quicker lip transitions and preserved M/P/B closure. Add four eye-direction morph targets: the eyeball spheres rotate rigidly so their iris colors turn, while the skin remains fixed. The camera now emits only a smoothed face-position attention vector; it no longer predicts or copies expressions, jaw opening, blink, head tilt or head orientation. SUU uses that position for eye direction and a restrained attention turn. Its own speech and blinking remain autonomous.
 
 The spoken form of the standalone name SUU is normalized to “Súu” for server voices and browser speech, leaving visible chat text untouched. This avoids acronym-style spelling and requests emphasis on the u through ordinary text; exact vowel duration still depends on the selected voice. No dental geometry is added.
+
+## V6 — dynamics, oral cavity and multimodal articulation (experimental)
+
+- `lib/face-physics.ts`: 13 independent bounded spring–mass facial actuators, damped with fixed integration substeps and antagonistic constraints for lips and smile/serious expressions. The existing Gaussian skin displacement fields and jaw hinge remain the deformation basis. This is **physically inspired animation**, not an anatomically calibrated finite-element simulation of facial muscles, joints or soft tissue.
+- `components/SuuOralCavity.tsx`: visible upper/lower tooth rows and a separately animated tongue in the mouth opening; linked to the jaw actuator. The meshes are procedural visual proxies, not dental scans. The insert is hidden on a closed mouth and in pure particle mode.
+- `lib/face-emotion.ts`: conservative deterministic affect cues extracted only from SUU's **own spoken response**, with bounded smile/brow/frown combinations, negation safeguards and a neutral default. This is not an LLM emotion classifier; camera tracking remains attention-only.
+- `/api/voice`: ElevenLabs `/with-timestamps` optionally supplies measured **character boundaries**; Edge TTS still supplies measured word windows, and local/browser speech retains the estimated fallback. Measured characters are *not* phonemes.
+- `deploy/dell-phonemes/` and `lib/phoneme-aligner.ts`: opt-in private Spanish MFA service. When installed with the requisite acoustic model and dictionary, it returns acoustically forced-aligned phoneme intervals, takes precedence over characters/words, and drives lip gestures plus a subset of tongue articulation. Without it, voice continues normally. **It has not been installed, benchmarked or validated on the Dell by this repository change.**
+
+### Validation protocol
+
+Run `npm run typecheck && npm test && npm run build`. In `/face-lab`, verify neutral, jaw opening, smiles/serious poses, brows, blink and all four gaze channels at 25k/100k points in all views. In live conversation verify that the mouth closes at pauses, queued audio does not restart after cancellation, full-screen and economy modes remain functional, and the teeth/tongue do not intersect the lips during speech. Assess acoustic synchronization on recorded Spanish utterances and compare generated phoneme intervals against hand-labeled reference samples before declaring it accurate.
+
+There is no published objective benchmark yet for lip-sync error, expression realism, muscle mechanics or frame-rate under load. The 13 channels and point counts are implementation characteristics, not evidence of experimental accuracy.
